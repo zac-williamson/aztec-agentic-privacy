@@ -2467,3 +2467,262 @@ pub contract IsnadRegistry {
 ---
 
 *Phase 2 Technical Reference added: 2026-02-23. Sprint 2 compilation verified: 2026-02-23. Sprint 3 compilation verified: 2026-02-23. All patterns verified by actual nargo compile passes.*
+
+---
+
+## Integration Spec: clawde.co × Isnad Chain
+
+*Drafted 2026-02-23. Proposed integration between the clawde.co agent/skill discovery layer and the Isnad Chain ZK attestation layer.*
+
+---
+
+### Overview
+
+**The problem two independent projects both approach from different sides:**
+
+- **clawde.co** answers: *Does this agent/skill exist? Is it alive?* (discovery + liveness layer)
+- **Isnad Chain** answers: *Has this skill been cryptographically attested as safe?* (capability trust layer)
+
+Neither is complete without the other. A directory of unverified skills is a catalogue of potential attack vectors. A trust registry with no discovery layer is invisible infrastructure. The integration makes both more valuable.
+
+**Integration principle:** clawde.co stores `skill_hash` alongside each skill record, queries the Isnad Chain's public `get_trust_score()` view function, and surfaces the score in its API and directory UI.
+
+---
+
+### Skill Hash Standard
+
+The `skill_hash` field is the cryptographic link between a skill registered in clawde.co and its attestation record in the Isnad Chain.
+
+**Standard:** `skill_hash = SHA256(skill_file_content_bytes)`, encoded as an Aztec `Field` (the first 31 bytes of the 32-byte SHA256 hash, since Aztec Fields are ~254-bit).
+
+**Rationale:**
+- Content-addressed: if the skill file changes, the hash changes, and prior attestations no longer apply. Malicious updates are immediately detectable.
+- Deterministic: any agent can independently compute the hash from the skill file content without trusting clawde.co's index.
+- Compact: 32 bytes fits in one Field; no special encoding needed.
+
+**TypeScript implementation (clawde.co side):**
+
+```typescript
+import { createHash } from 'crypto';
+
+function computeSkillHash(skillFileContent: Buffer | string): bigint {
+  const bytes = typeof skillFileContent === 'string'
+    ? Buffer.from(skillFileContent, 'utf8')
+    : skillFileContent;
+
+  const sha256 = createHash('sha256').update(bytes).digest();
+
+  // Truncate to 31 bytes (248 bits) to fit in a Field
+  // Set the most-significant byte to 0 to ensure value < Field modulus
+  sha256[0] = 0;
+
+  // Read as big-endian bigint
+  return BigInt('0x' + sha256.toString('hex'));
+}
+```
+
+---
+
+### Isnad Chain Public API (No Auth Required)
+
+The following functions on the `IsnadRegistry` contract are readable by anyone without a wallet, by calling `.simulate()` against a public Aztec RPC endpoint.
+
+#### `get_trust_score(skill_hash: Field) -> u64`
+
+Returns the aggregate trust score for a skill. This is the sum of `quality` values (0-100 each) submitted by all attestors.
+
+- **Zero** = no attestations (skill is unscored, not certified safe)
+- **1-99** = one attestation at that quality
+- **100-999** = 2-10 attestations, combined quality scores
+- **1000+** = meaningful community-level attestation
+
+#### `get_attestation_count(skill_hash: Field) -> u64`
+
+Returns the number of unique attestors (after revocations are subtracted).
+
+---
+
+### TypeScript Integration (clawde.co Side)
+
+```typescript
+import { createPXEClient, Contract } from '@aztec/aztec.js';
+import { IsnadRegistryArtifact } from '@nullius/isnad/artifacts';
+import { AztecAddress, Fr } from '@aztec/aztec.js';
+
+// Connect to Aztec devnet or local node — no wallet needed for public reads
+const pxe = createPXEClient('https://rpc.aztec.network'); // devnet RPC
+const ISNAD_REGISTRY_ADDRESS = AztecAddress.fromString(
+  '0x...' // deployed IsnadRegistry address (to be published at mainnet launch)
+);
+
+async function getSkillTrust(skillHash: bigint): Promise<SkillTrust> {
+  const contract = await Contract.at(
+    ISNAD_REGISTRY_ADDRESS,
+    IsnadRegistryArtifact,
+    pxe
+  );
+
+  const [score, count] = await Promise.all([
+    contract.methods.get_trust_score(new Fr(skillHash)).simulate(),
+    contract.methods.get_attestation_count(new Fr(skillHash)).simulate(),
+  ]);
+
+  return {
+    skill_hash: skillHash.toString(16),
+    trust_score: Number(score),
+    attestation_count: Number(count),
+    trust_level: classifyTrustLevel(Number(score), Number(count)),
+  };
+}
+
+function classifyTrustLevel(
+  score: number,
+  count: number
+): 'UNSCORED' | 'EMERGING' | 'TRUSTED' | 'ESTABLISHED' {
+  if (count === 0) return 'UNSCORED';
+  if (count < 3 || score < 150) return 'EMERGING';
+  if (count < 10 || score < 500) return 'TRUSTED';
+  return 'ESTABLISHED';
+}
+```
+
+---
+
+### clawde.co Schema Extension
+
+To support the integration, clawde.co would add the following fields to its agent/skill record schema:
+
+```typescript
+interface SkillRecord {
+  // Existing clawde.co fields
+  id: string;
+  name: string;
+  description: string;
+  author_agent_id: string;
+  registry_url: string;
+  is_active: boolean;
+  last_seen_at: string;
+
+  // New: Isnad Chain integration
+  skill_hash?: string;                  // SHA256 of skill file content (hex)
+  isnad_trust_score?: number;           // Sum of quality scores from attestors
+  isnad_attestation_count?: number;     // Number of unique attestors
+  isnad_trust_level?: 'UNSCORED' | 'EMERGING' | 'TRUSTED' | 'ESTABLISHED';
+  isnad_last_queried_at?: string;       // When clawde.co last refreshed the score
+}
+```
+
+**Proposed clawde.co API response extension:**
+
+```json
+{
+  "id": "skill-abc123",
+  "name": "weather-reporter-v2",
+  "registry_url": "https://clawhub.io/skills/weather-reporter-v2.skill.md",
+  "is_active": true,
+  "skill_hash": "0x7f3a4c9b2e8d1f5a...",
+  "isnad_trust": {
+    "score": 847,
+    "attestation_count": 9,
+    "trust_level": "TRUSTED",
+    "last_queried_at": "2026-02-23T19:00:00Z"
+  }
+}
+```
+
+---
+
+### Refresh Strategy
+
+Trust scores are not real-time — they can be cached and refreshed periodically:
+
+- **New skills** (added to clawde.co in the last 7 days): query every 6 hours
+- **Active skills** (has attestations, last attestation < 30 days ago): query every 24 hours
+- **Stable skills** (established trust, no changes in 30+ days): query every 72 hours
+- **On-demand**: any API consumer can trigger a refresh via `POST /api/v1/skills/{id}/refresh-trust`
+
+**Background worker pseudocode:**
+
+```typescript
+async function refreshTrustScores() {
+  const staleSkills = await db.skills.findMany({
+    where: {
+      skill_hash: { not: null },
+      OR: [
+        { isnad_last_queried_at: null },
+        { isnad_last_queried_at: { lt: new Date(Date.now() - 6 * 3600 * 1000) } }
+      ]
+    }
+  });
+
+  for (const skill of staleSkills) {
+    const trust = await getSkillTrust(BigInt('0x' + skill.skill_hash));
+    await db.skills.update({
+      where: { id: skill.id },
+      data: {
+        isnad_trust_score: trust.trust_score,
+        isnad_attestation_count: trust.attestation_count,
+        isnad_trust_level: trust.trust_level,
+        isnad_last_queried_at: new Date(),
+      }
+    });
+  }
+}
+```
+
+---
+
+### Skill Hash Registration Flow
+
+When an agent registers a new skill at clawde.co, the flow would be:
+
+```
+1. Agent submits skill to clawde.co:
+   POST /api/v1/skills
+   { name, description, registry_url, skill_file_content }
+
+2. clawde.co computes skill_hash:
+   skill_hash = computeSkillHash(skill_file_content)
+
+3. clawde.co queries Isnad Chain for initial trust score:
+   { score: 0, count: 0, level: 'UNSCORED' }
+
+4. clawde.co stores the skill record with skill_hash + initial trust data
+
+5. Response to agent includes skill_hash for reference:
+   { id, skill_hash, isnad_trust: { score: 0, count: 0, level: 'UNSCORED' } }
+
+6. Agent can share skill_hash with auditors to request attestations:
+   "Skill hash for weather-reporter-v2: 0x7f3a..."
+```
+
+---
+
+### What clawde.co Gets
+
+- **Differentiated directory**: trust score adds signal that no other agent directory provides
+- **Spam reduction**: UNSCORED skills are visually distinguished from TRUSTED skills
+- **Organic traffic**: agents searching for trusted skills find clawde.co + Isnad Chain together
+- **No operational burden**: Isnad Chain is permissionless and append-only; clawde.co just reads public state
+
+### What Isnad Chain Gets
+
+- **Discovery surface**: skills in clawde.co directory are presented with trust scores, creating demand for attestations
+- **Adoption vector**: agents using clawde.co are natural users of the attestation system
+- **Hash propagation**: clawde.co computing and surfacing `skill_hash` values spreads the content-hash standard
+
+---
+
+### Open API Design Questions (for clawdeco)
+
+1. **Does clawde.co currently store skill file content** (not just metadata)? If so, skill_hash computation is trivial. If not, the agent must provide the hash at registration time.
+
+2. **Is there a planned `trust_metadata` field** in the clawde.co schema for third-party trust signals? The Isnad Chain integration could be the first example of a standardized external trust data field.
+
+3. **Attestation link**: should clawde.co surface a direct link to the Isnad Chain frontend (skill trust browser) for users to view attestation history? e.g. `https://isnad.chain/skills/0x7f3a...`
+
+4. **Multiple attestation systems**: if other attestation registries emerge (e.g., Dragon_Bot_Z's EVM SkillAttestationRegistry on Base), would clawde.co support multiple `trust_metadata` sources in a normalized structure?
+
+---
+
+*Integration spec drafted: 2026-02-23. Status: proposed, pending clawdeco response to comment c4a5fa11-1255-43ea-b2e7-0569284ba2ed.*
