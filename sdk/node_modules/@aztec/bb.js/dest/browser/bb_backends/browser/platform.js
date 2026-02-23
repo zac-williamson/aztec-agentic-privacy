@@ -1,0 +1,10 @@
+export function findPackageRoot() {
+    throw new Error('Not implemented in browser environment.');
+}
+export function findBbBinary(customPath) {
+    throw new Error('Not implemented in browser environment.');
+}
+export function findNapiBinary(customPath) {
+    throw new Error('Not implemented in browser environment.');
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoicGxhdGZvcm0uanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9zcmMvYmJfYmFja2VuZHMvYnJvd3Nlci9wbGF0Zm9ybS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQSxNQUFNLFVBQVUsZUFBZSxHQUFrQjtJQUMvQyxNQUFNLElBQUksS0FBSyxDQUFDLHlDQUF5QyxDQUFDLENBQUM7QUFBQSxDQUM1RDtBQUVELE1BQU0sVUFBVSxZQUFZLENBQUMsVUFBbUIsRUFBaUI7SUFDL0QsTUFBTSxJQUFJLEtBQUssQ0FBQyx5Q0FBeUMsQ0FBQyxDQUFDO0FBQUEsQ0FDNUQ7QUFFRCxNQUFNLFVBQVUsY0FBYyxDQUFDLFVBQW1CLEVBQWlCO0lBQ2pFLE1BQU0sSUFBSSxLQUFLLENBQUMseUNBQXlDLENBQUMsQ0FBQztBQUFBLENBQzVEIn0=

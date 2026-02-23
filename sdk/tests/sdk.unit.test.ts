@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { IsnadSDK } from "../src/isnad.js";
-import { Fr } from "@aztec/aztec.js";
+import { Fr } from "@aztec/aztec.js/fields";
 
 describe("IsnadSDK.computeSkillHash", () => {
   it("returns an Fr for a non-empty input", () => {

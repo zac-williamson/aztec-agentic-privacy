@@ -1,4 +1,5 @@
-import type { AztecAddress, Fr } from "@aztec/aztec.js";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { Fr } from "@aztec/aztec.js/fields";
 
 /**
  * The result of calling getTrustScore — public data readable by anyone.

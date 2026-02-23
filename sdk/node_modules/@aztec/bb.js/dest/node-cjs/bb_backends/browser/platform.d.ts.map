@@ -1,0 +1,1 @@
+{"version":3,"file":"platform.d.ts","sourceRoot":"","sources":["../../../../src/bb_backends/browser/platform.ts"],"names":[],"mappings":"AAAA,wBAAgB,eAAe,IAAI,MAAM,GAAG,IAAI,CAE/C;AAED,wBAAgB,YAAY,CAAC,UAAU,CAAC,EAAE,MAAM,GAAG,MAAM,GAAG,IAAI,CAE/D;AAED,wBAAgB,cAAc,CAAC,UAAU,CAAC,EAAE,MAAM,GAAG,MAAM,GAAG,IAAI,CAEjE"}

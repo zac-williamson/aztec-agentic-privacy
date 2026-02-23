@@ -1,0 +1,124 @@
+import { randomBytes } from '../../random/index.js';
+/**
+ * Base implementation of BarretenbergWasm.
+ * Contains code that is common to the "main thread" implementation and the "child thread" implementation.
+ */
+export class BarretenbergWasmBase {
+    memStore = {};
+    memory;
+    instance;
+    logger = () => { };
+    getImportObj(memory) {
+        /* eslint-disable camelcase */
+        const importObj = {
+            // We need to implement a part of the wasi api:
+            // https://github.com/WebAssembly/WASI/blob/main/phases/snapshot/docs.md
+            // We literally only need to support random_get, everything else is noop implementated in barretenberg.wasm.
+            wasi_snapshot_preview1: {
+                random_get: (out, length) => {
+                    out = out >>> 0;
+                    const randomData = randomBytes(length);
+                    const mem = this.getMemory();
+                    mem.set(randomData, out);
+                },
+                clock_time_get: (a1, a2, out) => {
+                    out = out >>> 0;
+                    const ts = BigInt(new Date().getTime()) * 1000000n;
+                    const view = new DataView(this.getMemory().buffer);
+                    view.setBigUint64(out, ts, true);
+                },
+                proc_exit: () => {
+                    this.logger('PANIC: proc_exit was called.');
+                    throw new Error();
+                },
+            },
+            // These are functions implementations for imports we've defined are needed.
+            // The native C++ build defines these in a module called "env". We must implement TypeScript versions here.
+            env: {
+                /**
+                 * The 'info' call we use for logging in C++, calls this under the hood.
+                 * The native code will just print to std:err (to avoid std::cout which is used for IPC).
+                 * Here we just emit the log line for the client to decide what to do with.
+                 */
+                logstr: (addr) => {
+                    const str = this.stringFromAddress(addr);
+                    const m = this.getMemory();
+                    const str2 = `${str} (mem: ${(m.length / (1024 * 1024)).toFixed(2)}MiB)`;
+                    this.logger(str2);
+                },
+                throw_or_abort_impl: (addr) => {
+                    const str = this.stringFromAddress(addr);
+                    throw new Error(str);
+                },
+                get_data: (keyAddr, outBufAddr) => {
+                    const key = this.stringFromAddress(keyAddr);
+                    outBufAddr = outBufAddr >>> 0;
+                    const data = this.memStore[key];
+                    if (!data) {
+                        this.logger(`get_data miss ${key}`);
+                        return;
+                    }
+                    // this.logger(`get_data hit ${key} size: ${data.length} dest: ${outBufAddr}`);
+                    // this.logger(Buffer.from(data.slice(0, 64)).toString('hex'));
+                    this.writeMemory(outBufAddr, data);
+                },
+                set_data: (keyAddr, dataAddr, dataLength) => {
+                    const key = this.stringFromAddress(keyAddr);
+                    dataAddr = dataAddr >>> 0;
+                    this.memStore[key] = this.getMemorySlice(dataAddr, dataAddr + dataLength);
+                    // this.logger(`set_data: ${key} length: ${dataLength}`);
+                },
+                memory,
+            },
+        };
+        /* eslint-enable camelcase */
+        return importObj;
+    }
+    exports() {
+        return this.instance.exports;
+    }
+    /**
+     * When returning values from the WASM, use >>> operator to convert signed representation to unsigned representation.
+     */
+    call(name, ...args) {
+        if (!this.exports()[name]) {
+            throw new Error(`WASM function ${name} not found.`);
+        }
+        try {
+            return this.exports()[name](...args) >>> 0;
+        }
+        catch (err) {
+            const message = `WASM function ${name} aborted, error: ${err}`;
+            this.logger(message);
+            this.logger(err.stack);
+            throw err;
+        }
+    }
+    memSize() {
+        return this.getMemory().length;
+    }
+    /**
+     * Returns a copy of the data, not a view.
+     */
+    getMemorySlice(start, end) {
+        return this.getMemory().subarray(start, end).slice();
+    }
+    writeMemory(offset, arr) {
+        const mem = this.getMemory();
+        mem.set(arr, offset);
+    }
+    getMemory() {
+        return new Uint8Array(this.memory.buffer);
+    }
+    // PRIVATE METHODS
+    stringFromAddress(addr) {
+        addr = addr >>> 0;
+        const m = this.getMemory();
+        let i = addr;
+        for (; m[i] !== 0; ++i)
+            ;
+        const textDecoder = new TextDecoder('ascii');
+        return textDecoder.decode(m.slice(addr, i));
+    }
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9zcmMvYmFycmV0ZW5iZXJnX3dhc20vYmFycmV0ZW5iZXJnX3dhc21fYmFzZS9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQSxPQUFPLEVBQUUsV0FBVyxFQUFFLE1BQU0sdUJBQXVCLENBQUM7QUFFcEQ7OztHQUdHO0FBQ0gsTUFBTSxPQUFPLG9CQUFvQjtJQUNyQixRQUFRLEdBQWtDLEVBQUUsQ0FBQztJQUM3QyxNQUFNLENBQXNCO0lBQzVCLFFBQVEsQ0FBd0I7SUFDaEMsTUFBTSxHQUEwQixHQUFHLEVBQUUsQ0FBQyxFQUFDLENBQUMsQ0FBQztJQUV6QyxZQUFZLENBQUMsTUFBMEIsRUFBRTtRQUNqRCw4QkFBOEI7UUFDOUIsTUFBTSxTQUFTLEdBQUc7WUFDaEIsK0NBQStDO1lBQy9DLHdFQUF3RTtZQUN4RSw0R0FBNEc7WUFDNUcsc0JBQXNCLEVBQUU7Z0JBQ3RCLFVBQVUsRUFBRSxDQUFDLEdBQVEsRUFBRSxNQUFjLEVBQUUsRUFBRSxDQUFDO29CQUN4QyxHQUFHLEdBQUcsR0FBRyxLQUFLLENBQUMsQ0FBQztvQkFDaEIsTUFBTSxVQUFVLEdBQUcsV0FBVyxDQUFDLE1BQU0sQ0FBQyxDQUFDO29CQUN2QyxNQUFNLEdBQUcsR0FBRyxJQUFJLENBQUMsU0FBUyxFQUFFLENBQUM7b0JBQzdCLEdBQUcsQ0FBQyxHQUFHLENBQUMsVUFBVSxFQUFFLEdBQUcsQ0FBQyxDQUFDO2dCQUFBLENBQzFCO2dCQUNELGNBQWMsRUFBRSxDQUFDLEVBQVUsRUFBRSxFQUFVLEVBQUUsR0FBVyxFQUFFLEVBQUUsQ0FBQztvQkFDdkQsR0FBRyxHQUFHLEdBQUcsS0FBSyxDQUFDLENBQUM7b0JBQ2hCLE1BQU0sRUFBRSxHQUFHLE1BQU0sQ0FBQyxJQUFJLElBQUksRUFBRSxDQUFDLE9BQU8sRUFBRSxDQUFDLEdBQUcsUUFBUSxDQUFDO29CQUNuRCxNQUFNLElBQUksR0FB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

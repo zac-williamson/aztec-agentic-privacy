@@ -1,0 +1,198 @@
+import { getNumCpu, getRemoteBarretenbergWasm, getSharedMemoryAvailable } from '../helpers/index.js';
+import { createThreadWorker } from '../barretenberg_wasm_thread/factory/browser/index.js';
+import { BarretenbergWasmBase } from '../barretenberg_wasm_base/index.js';
+import { HeapAllocator } from './heap_allocator.js';
+/**
+ * This is the "main thread" implementation of BarretenbergWasm.
+ * It spawns a bunch of "child thread" implementations.
+ * In a browser context, this still runs on a worker, as it will block waiting on child threads.
+ */
+export class BarretenbergWasmMain extends BarretenbergWasmBase {
+    static MAX_THREADS = 32;
+    workers = [];
+    remoteWasms = [];
+    nextWorker = 0;
+    nextThreadId = 1;
+    useCustomLogger = false;
+    // Pre-allocated scratch buffers for msgpack I/O to avoid malloc/free overhead
+    msgpackInputScratch = 0; // 8MB input buffer
+    msgpackOutputScratch = 0; // 8MB output buffer
+    MSGPACK_SCRATCH_SIZE = 1024 * 1024 * 8; // 8MB
+    getNumThreads() {
+        return this.workers.length + 1;
+    }
+    /**
+     * Init as main thread. Spawn child threads.
+     */
+    async init(module, threads = Math.min(getNumCpu(), BarretenbergWasmMain.MAX_THREADS), logger, initial = 35, maximum = this.getDefaultMaximumMemoryPages()) {
+        // Track whether a custom logger was provided so workers know whether to postMessage logs
+        this.useCustomLogger = logger !== undefined;
+        this.logger = logger ?? (() => { });
+        const initialMb = (initial * 2 ** 16) / (1024 * 1024);
+        const maxMb = (maximum * 2 ** 16) / (1024 * 1024);
+        const shared = getSharedMemoryAvailable();
+        this.logger(`Initializing bb wasm: initial memory ${initial} pages ${initialMb}MiB; ` +
+            `max memory: ${maximum} pages, ${maxMb}MiB; ` +
+            `threads: ${threads}; shared memory: ${shared}`);
+        this.memory = new WebAssembly.Memory({ initial, maximum, shared });
+        const instance = await WebAssembly.instantiate(module, this.getImportObj(this.memory));
+        this.instance = instance;
+        // Init all global/static data.
+        this.call('_initialize');
+        // Allocate dedicated msgpack scratch buffers (never freed, reused for all msgpack calls)
+        this.msgpackInputScratch = this.call('bbmalloc', this.MSGPACK_SCRATCH_SIZE);
+        this.msgpackOutputScratch = this.call('bbmalloc', this.MSGPACK_SCRATCH_SIZE);
+        this.logger(`Allocated msgpack scratch buffers: ` +
+            `input @ ${this.msgpackInputScratch}, output @ ${this.msgpackOutputScratch} (${this.MSGPACK_SCRATCH_SIZE} bytes each)`);
+        // Create worker threads. Create 1 less than requested, as main thread counts as a thread.
+        if (threads > 1) {
+            this.logger(`Creating ${threads} worker threads`);
+            this.workers = await Promise.all(Array.from({ length: threads - 1 }).map(createThreadWorker));
+            // Set up log message forwarding from workers to our logger (only if custom logger provided)
+            if (this.useCustomLogger) {
+                this.workers.forEach(worker => this.setupWorkerLogForwarding(worker));
+            }
+            this.remoteWasms = await Promise.all(this.workers.map(getRemoteBarretenbergWasm));
+            await Promise.all(this.remoteWasms.map(w => w.initThread(module, this.memory, this.useCustomLogger)));
+        }
+    }
+    getDefaultMaximumMemoryPages() {
+        // iOS browser is very aggressive with memory. Check if running in browser and on iOS.
+        // We at any rate expect the mobile iOS browser to kill us >=1GB, so we don't set a maximum higher than that.
+        // Use `self` instead of `window` so this check also works inside Web Workers.
+        if (typeof self !== 'undefined' && typeof self.navigator !== 'undefined' && /iPad|iPhone/.test(self.navigator.userAgent)) {
+            return 2 ** 14;
+        }
+        return 2 ** 16;
+    }
+    /**
+     * Set up forwarding of log messages from worker threads to our logger.
+     * Workers post messages with { type: 'log', msg: string } which we intercept here.
+     */
+    setupWorkerLogForwarding(worker) {
+        const handler = (data) => {
+            if (data && typeof data === 'object' && 'type' in data && data.type === 'log' && 'msg' in data) {
+                this.logger(data.msg);
+            }
+        };
+        // Node Workers use 'on' method, browser Workers use 'addEventListener'
+        // The 'worker' variable is typed as Node's Worker, but at runtime in browser
+        // it will be a browser Worker (due to browser_postprocess.sh import rewriting)
+        if ('on' in worker && typeof worker.on === 'function') {
+            // Node.js worker_threads Worker
+            worker.on('message', handler);
+        }
+        else if ('addEventListener' in worker) {
+            // Browser Web Worker
+            worker.addEventListener('message', (event) => {
+                handler(event.data);
+            });
+        }
+    }
+    /**
+     * Called on main thread. Signals child threads to gracefully exit.
+     */
+    async destroy() {
+        await Promise.all(this.workers.map(w => w.terminate()));
+    }
+    getImportObj(memory) {
+        const baseImports = super.getImportObj(memory);
+        /* eslint-disable camelcase */
+        return {
+            ...baseImports,
+            wasi: {
+                'thread-spawn': (arg) => {
+                    arg = arg >>> 0;
+                    const id = this.nextThreadId++;
+                    const worker = this.nextWorker++ % this.remoteWasms.length;
+                    // this.logger(`spawning thread ${id} on worker ${worker} with arg ${arg >>> 0}`);
+                    this.remoteWasms[worker].call('wasi_thread_start', id, arg).catch(this.logger);
+                    // this.remoteWasms[worker].postMessage({ msg: 'thread', data: { id, arg } });
+                    return id;
+                },
+            },
+            env: {
+                ...baseImports.env,
+                env_hardware_concurrency: () => {
+                    // If there are no workers (we're already running as a worker, or the main thread requested no workers)
+                    // then we return 1, which should cause any algos using threading to just not create a thread.
+                    return this.remoteWasms.length + 1;
+                },
+            },
+        };
+        /* eslint-enable camelcase */
+    }
+    callWasmExport(funcName, inArgs, outLens) {
+        const alloc = new HeapAllocator(this);
+        const inPtrs = alloc.getInputs(inArgs);
+        const outPtrs = alloc.getOutputPtrs(outLens);
+        this.call(funcName, ...inPtrs, ...outPtrs);
+        const outArgs = this.getOutputArgs(outLens, outPtrs, alloc);
+        alloc.freeAll();
+        return outArgs;
+    }
+    getOutputArgs(outLens, outPtrs, alloc) {
+        return outLens.map((len, i) => {
+            if (len) {
+                return this.getMemorySlice(outPtrs[i], outPtrs[i] + len);
+            }
+            const slice = this.getMemorySlice(outPtrs[i], outPtrs[i] + 4);
+            const ptr = new DataView(slice.buffer, slice.byteOffset, slice.byteLength).getUint32(0, true);
+            // Add our heap buffer to the dealloc list.
+            alloc.addOutputPtr(ptr);
+            // The length will be found in the first 4 bytes of the buffer, big endian. See to_heap_buffer.
+            const lslice = this.getMemorySlice(ptr, ptr + 4);
+            const length = new DataView(lslice.buffer, lslice.byteOffset, lslice.byteLength).getUint32(0, false);
+            return this.getMemorySlice(ptr + 4, ptr + 4 + length);
+        });
+    }
+    cbindCall(cbind, inputBuffer) {
+        const needsCustomInputBuffer = inputBuffer.length > this.MSGPACK_SCRATCH_SIZE;
+        let inputPtr;
+        if (needsCustomInputBuffer) {
+            // Allocate temporary buffer for oversized input
+            inputPtr = this.call('bbmalloc', inputBuffer.length);
+        }
+        else {
+            // Use pre-allocated scratch buffer
+            inputPtr = this.msgpackInputScratch;
+        }
+        // Write input to buffer
+        this.writeMemory(inputPtr, inputBuffer);
+        // Setup output scratch buffer with IN-OUT parameter pattern:
+        // Reserve 8 bytes for metadata (pointer + size), rest is scratch data space
+        const METADATA_SIZE = 8;
+        const outputPtrLocation = this.msgpackOutputScratch;
+        const outputSizeLocation = this.msgpackOutputScratch + 4;
+        const scratchDataPtr = this.msgpackOutputScratch + METADATA_SIZE;
+        const scratchDataSize = this.MSGPACK_SCRATCH_SIZE - METADATA_SIZE;
+        // Get memory and create DataView for writing IN values
+        let mem = this.getMemory();
+        let view = new DataView(mem.buffer);
+        // Write IN values: provide scratch buffer pointer and size to C++
+        view.setUint32(outputPtrLocation, scratchDataPtr, true);
+        view.setUint32(outputSizeLocation, scratchDataSize, true);
+        // Call WASM
+        this.call(cbind, inputPtr, inputBuffer.length, outputPtrLocation, outputSizeLocation);
+        // Free custom input buffer if allocated
+        if (needsCustomInputBuffer) {
+            this.call('bbfree', inputPtr);
+        }
+        // Re-fetch memory after WASM call, as the buffer may have been detached if memory grew
+        mem = this.getMemory();
+        view = new DataView(mem.buffer);
+        // Read OUT values: C++ returns actual buffer pointer and size
+        const outputDataPtr = view.getUint32(outputPtrLocation, true);
+        const outputSize = view.getUint32(outputSizeLocation, true);
+        // Check if C++ used scratch (pointer unchanged) or allocated (pointer changed)
+        const usedScratch = outputDataPtr === scratchDataPtr;
+        // Copy output data from WASM memory
+        const encodedResult = this.getMemorySlice(outputDataPtr, outputDataPtr + outputSize);
+        // Only free if C++ allocated beyond scratch
+        if (!usedScratch) {
+            this.call('bbfree', outputDataPtr);
+        }
+        return encodedResult;
+    }
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9zcmMvYmFycmV0ZW5iZXJnX3dhc20vYmFycmV0ZW5iZXJnX3dhc21fbWFpbi9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFFQSxPQUFPLEVBQUUsU0FBUyxFQUFFLHlCQUF5QixFQUFFLHdCQUF3QixFQUFFLE1BQU0scUJBQXFCLENBQUM7QUFDckcsT0FBTyxFQUFFLGtCQUFrQixFQUFFLE1BQU0sbURBQW1ELENBQUM7QUFFdkYsT0FBTyxFQUFFLG9CQUFvQixFQUFFLE1BQU0sb0NBQW9DLENBQUM7QUFDMUUsT0FBTyxFQUFFLGFBQWEsRUFBRSxNQUFNLHFCQUFxQixDQUFDO0FBRXBEOzs7O0dBSUc7QUFDSCxNQUFNLE9BQU8sb0JBQXFCLFNBQVEsb0JBQW9CO0lBQzVELE1BQU0sQ0FBQyxXQUFXLEdBQUcsRUFBRSxDQUFDO0lBQ2hCLE9BQU8sR0FBYSxFQUFFLENBQUM7SUFDdkIsV0FBVyxHQUFtQyxFQUFFLENBQUM7SUFDakQsVUFBVSxHQUFHLENBQUMsQ0FBQztJQUNmLFlBQVksR0FBRyxDQUFDLENBQUM7SUFDakIsZUFBZSxHQUFHLEtBQUssQ0FBQztJQUVoQyw4RUFBOEU7SUFDdEUsbUJBQW1CLEdBQVcsQ0FBQyxDQUFDLENBQUMsbUJBQW1CO0lBQ3BELG9CQUFvQixHQUFXLENBQUMsQ0FBQyxDQUFDLG9CQUFvQjtJQUM3QyxvQkFBb0IsR0FBRyxJQUFJLEdBQUcsSUFBSSxHQUFHLENBQUMsQ0FBQyxDQUFDLE1BQU07SUFFeEQsYUFBYSxHQUFHO1FBQ3JCLE9BQU8sSUFBSSxDQUFDLE9BQU8sQ0FBQyxNQUFNLEdBQUcsQ0FBQyxDQUFDO0lBQUEsQ0FDaEM7SUFFRDs7T0FFRztJQUNJLEtBQUssQ0FBQyxJQUFJLENBQ2YsTUFBMEIsRUFDMUIsT0FBTyxHQUFHLElBQUksQ0FBQyxHQUFHLENBQUMsU0FBUyxFQUFFLEVBQUUsb0JBQW9CLENBQUMsV0FBVyxDQUFDLEVBQ2pFLE1BQThCLEVBQzlCLE9BQU8sR0FBRyxFQUFFLEVBQ1osT0FBTyxHQUFHLElBQUksQ0FBQyw0QkFBNEIsRUFBRSxFQUM3QztRQUNBLHlGQUF5RjtRQUN6RixJQUFJLENBQUMsZUFBZSxHQUFHLE1BQU0sS0FBSyxTQUFTLENBQUM7UUFDNUMsSUFBSSxDQUFDLE1BQU0sR0FBRyxNQUFNLElBQUksQ0FBQyxHQUFHLEVBQUUsQ0FBQyxFQUFDLENBQUMsQ0FBQyxDQUFDO1FBRW5DLE1BQU0sU0FBUyxHQUFHLENBQUMsT0FBTyxHQUFHLENBQUMsSUFBSSxFQUFFLENBQUMsR0FBRyxDQUFDLElBQUksR0FBRyxJQUFJLENBQUMsQ0FBQztRQUN0RCxNQUFNLEtBQUssR0FBRyxDQUFDLE9BQU8sR0FBRyxDQUFDLElBQUksRUFBRSxDQUFDLEdBQUcsQ0FBQyxJQUFJLEdBQUcsSUFBSSxDQUFDLENBQUM7UUFDbEQsTUFBTSxNQUFNLEdBQUcsd0JBQXdCLEVBQUUsQ0FBQztRQUUxQyxJQUFJLENBQUMsTUFBTSxDQUNULHdDQUF3QyxPQUFPLFVBQVUsU0FBUyxPQUFPO1lBQ3ZFLGVBQWUsT0FBTyxXQUFXLEtBQUssT0FBTztZQUM3QyxZQUFZLE9BQU8sb0JBQW9CLE1BQU0sRUFBRSxDQUNsRCxDQUFDO1FBRUYsSUFBSSxDQUFDLE1BQU0sR0FBRyxJQUFJLFdBQVcsQ0FBQyxNQUFNLENBQUMsRUFBRSxPQUFPLEVBQUUsT0FBTyxFQUFFLE1BQU0sRUFBRSxDQUFDLENBQUM7UUFFbkUsTUFBTSxRQUFRLEdBQUcsTUFBTSxXQUFXLENBQUMsV0FBVyxDQUFDLE1BQU0sRUFBRSxJQUFJLENBQUMsWUFBWSxDQUFDLElBQUksQ0FBQyxNQUFNLENBQUMsQ0FBQyxDQUFDO1FBRXZGLElBQUksQ0FBQyxRQUFRLEdBQUcsUUFBUSxDQUFDO1FBRXpCLCtCQUErQjtRQUMvQixJQUFJLENBQUMsSUFBSSxDQUFDLGFBQWEsQ0FBQyxDQUFDO1FBRXpCLHlGQUF5RjtRQUN6RixJQUFJLENBQUMsbUJBQW1CLEdBQUcsSUFBSSxDQUFDLElBQUksQ0FBQyxVQUFVLEVBQUUsSUFBSSxDQUFDLG9CQUFvQixDQUFDLENBQUM7UUFDNUUsSUFBSSxDQUFDLG9CQUFvQixHQUFHLElBQUksQ0FBQyxJQUFJLENBQUMsVUFBVSxFQUFFLElBQUksQ0FBQyxvQkFBb0IsQ0FBQyxDQUFDO1FBQzdFLElBQUksQ0FBQyxNQUFNLENBQ1QscUNBQXFDO1lBQ25DLFdBQVcsSUFBSSxDQUFDLG1CQUFtQixjQUFjLElBQUksQ0FBQyxvQkFBb0IsS0FBSyxJQUFJLENBQUMsb0JBQW9CLGNBQWMsQ0FDekgsQ0FBQztRQUVGLDBGQUEwRjtRQUMxRixJQUFJLE9BQU8sR0FBRyxDQUFDLEVBQUUsQ0FBQztZQUNoQixJQUFJLENBQUMsTUFBTSxDQUFDLFlBQVksT0FBTyxpQkFBaUIsQ0FBQyxDQUFDO1lBQ2xELElBQUksQ0FBQyxPQUFPLEdBQUcsTUFBTSxPQUFPLENBQUMsR0FBRyxDQUFDLEtBQUssQ0FBQyxJQUFJLENBQUMsRUFBRSxNQUFNLEVBQUUsT0FBTyxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUMsR0FBRyxDQUFDLGtCQUFrQixDQUFDLENBQUMsQ0FBQztZQUU5Riw0RkFBNEY7WUFDNUYsSUFBSSxJQUFJLENBQUMsZUFBZSxFQUFFLENBQUM7Z0JBQ3pCLElBQUksQ0FBQyxPQUFPLENBQUMsT0FBTyxDQUFDLE1BQU0sQ0FBQyxFQUFFLENBQUMsSUFBSSxDQUFDLHdCQUF3QixDQUFDLE1BQU0sQ0FBQyxDQUFDLENBQUM7WUFDeEUsQ0FBQztZQUVELElBQUksQ0FBQyxXQUFXLEdBQUcsTUFBTSxPQUFPLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBQyxPQUFPLENBQUMsR0FBRyxDQUFDLHlCQUF1RCxDQUFDLENBQUMsQ0FBQztZQUNoSCxNQUFNLE9BQU8sQ0FBQyxHQUFHLENBQUMsSUFBSSxDQUFDLFdBQVcsQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsVUFBVSxDQUFDLE1BQU0sRUFBRSxJQUFJLENBQUMsTUFBTSxFQUFFLElBQUksQ0FBQyxlQUFlLENBQUMsQ0FBQyxDQUFDLENBQUM7UUFDeEcsQ0FBQztJQUFBLENBQ0Y7SUFFTyw0QkFBNEIsR0FBVztRQUM3QyxzRkFBc0Y7UUFDdEYsNkdBQTZHO1FBQzdHLDhFQUE4RTtRQUM5RSxJQUFJLE9BQU8sSUFBSSxLQUFLLFdBQVcsSUFBSSxPQUFPLElBQUksQ0FBQyxTQUFTLEtBQUssV0FBVyxJQUFJLGFBQWEsQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUFDLFNBQVMsQ0FBQyxTQUFTLENBQUMsRUFBRSxDQUFDO1lBQ3pILE9BQU8sQ0FBQyxJQUFJLEVBQUUsQ0FBQztRQUNqQixDQUFDO1FBQ0QsT0FBTyxDQUFDLElBQUksRUFBRSxDQUFDO0lBQUEsQ0FDaEI7SUFFRDs7O09BR0c7SUFDSyx3QkFBd0IsQ0FBQyxNQUFjLEVBQUU7UUFDL0MsTUFBTSxPQUFPLEdBQUcsQ0FBQyxJQUFhLEVBQUUsRUFBRSxDQUFDO1lBQ2pDLElBQUksSUFBSSxJQUFJLE9BQU8sSUFBSSxLQUFLLFFBQVEsSUFBSSxNQUFNLElBQUksSUFBSSxJQUFJLElBQUksQ0FBQyxJQUFJLEtBQUssS0FBSyxJQUFJLEtBQUssSUFBSSxJQUFJLEVBQUUsQ0FBQztnQkFDL0YsSUFBSSxDQUFDLE1BQU0sQ0FBQyxJQUFJLENBQUMsR0FBYSxDQUFDLENBQUM7WUFDbEMsQ0FBQztRQUFBLENBQ0YsQ0FBQztRQUVGLHVFQUF1RTtRQUN2RSw2RUFBNkU7UUFDN0UsK0VBQStFO1FBQy9FLElBQUksSUFBSSxJQUFJLE1BQU0sSUFBSSxPQUFPLE1BQU0sQ0FBQyxFQUFFLEtBQUssVUFBVSxFQUFFLENBQUM7WUFDdEQsZ0NBQWdDO1lBQ2hDLE1BQU0sQ0FBQyxFQUFFLENBQUMsU0FBUyxFQUFFLE9BQU8sQ0FBQyxDQUFDO1FBQ2hDLENBQUM7YUFBTSxJQUFJLGtCQUFrQixJQUFJLE1BQU0sRUFBRSxDQUFDO1lBQ3hDLHFCQUFxQjtZQUNwQixNQUF1QyxDQUFDLGdCQUFnQixDQUFDLFNBQVMsRUFBRSxDQUFDLEtBQW1CLEVBQUUsRUFBRSxDQUFDO2dCQUM1RixPQUFPLENBQUMsS0FBSyxDQUFDLElBQUksQ0FBQyxDQUFDO1lBQUEsQ0FDckIsQ0FBQyxDQUFDO1FBQ0wsQ0FBQztJQUFBLENBQ0Y7SUFFRDs7T0FFRztJQUNJLEtBQUssQ0FBQyxPQUFPLEdBQUc7UUFDckIsTUFBTSxPQUFPLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBQyxPQUFPLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsQ0FBQyxDQUFDLFNBQVMsRUFBRSxDQUFDLENBQUMsQ0FBQztJQUFBLENBQ3pEO0lBRVMsWUFBWSxDQUFDLE1BQTBCLEVBQUU7UUFDakQsTUFBTSxXQUFXLEdBQUcsS0FBSyxDQUFDLFlBQVksQ0FBQyxNQUFNLENBQUMsQ0FBQztRQUUvQyw4QkFBOEI7UUFDOUIsT0FBTztZQUNMLEdBQUcsV0FBVztZQUNkLElBQUksRUFBRTtnQkFDSixjQUFjLEVBQUUsQ0FBQyxHQUFXLEVBQUUsRUFBRSxDQUFDO29CQUMvQixHQUFHLEdBQUcsR0FBRyxLQUFLLENBQUMsQ0FBQztvQkFDaEIsTUFBTSxFQUFFLEdBQUcsSUFBSSxDQUFDLFlBQVksRUFBRSxDQUFDO29CQUMvQixNQUFNLE1BQU0sR0FBRyxJQUFJLENBQUMsVUFBVSxFQUFFLEdBQUcsSUFBSSxDQUFDLFdBQVcsQ0FBQyxNQUFNLENBQUM7b0JBQzNELGtGQUFrRjtvQkFDbEYsSUFBSSxDQUFDLFdBQVcsQ0FBQyxNQUFNLENBQUMsQ0FBQyxJQUFJLENBQUMsbUJBQW1CLEVBQUUsRUFBRSxFQUFFLEdBQUcsQ0FBQyxDQUFDLEtBQUssQ0FBQyxJQUFJLENBQUMsTUFBTSxDQUFDLENBQUM7b0JBQy9FLDhFQUE4RTtvQkFDOUUsT0FBTyxFQUFFLENBQUM7Z0JBQUEsQ0FDWDthQUNGO1lBQ0QsR0FBRyxFQUFFO2dCQUNILEdBQUcsV0FBVyxDQUFDLEdBQUc7Z0JBQ2xCLHdCQUF3QixFQUFFLEdBQUcsRUFBRSxDQUFDO29CQUM5Qix1R0FBdUc7b0JBQ3ZHLDhGQUE4RjtvQkFDOUYsT0FBTyxJQUFJLENBQUMsV0FBVyxDQUFDLE1BQU0sR0FBRyxDQUFDLENBQUM7Z0JBQUEsQ0FDcEM7YUFDRjtTQUNGLENBQUM7UUFDRiw2QkFBNkI7SUFEM0IsQ0FFSDtJQUVELGNBQWMsQ0FBQyxRQUFnQixFQUFFLE1BQStCLEVBQUUsT0FBK0IsRUFBRTtRQUNqRyxNQUFNLEtBQUssR0FBRyxJQUFJLGFBQWEsQ0FBQyxJQUFJLENBQUMsQ0FBQztRQUN0QyxNQUFNLE1BQU0sR0FBRyxLQUFLLENBQUMsU0FBUyxDQUFDLE1BQU0sQ0FBQyxDQUFDO1FBQ3ZDLE1BQU0sT0FBTyxHQUFHLEtBQUssQ0FBQyxhQUFhLENBQUMsT0FBTyxDQUFDLENBQUM7UUFDN0MsSUFBSSxDQUFDLElBQUksQ0FBQyxRQUFRLEVBQUUsR0FBRyxNQUFNLEVBQUUsR0FBRyxPQUFPLENBQUMsQ0FBQztRQUMzQyxNQUFNLE9BQU8sR0FBRyxJQUFJLENBQUMsYUFBYSxDQUFDLE9BQU8sRUFBRSxPQUFPLEVBQUUsS0FBSyxDQUFDLENBQUM7UUFDNUQsS0FBSyxDQUFDLE9BQU8sRUFBRSxDQUFDO1FBQ2hCLE9BQU8sT0FBTyxDQUFDO0lBQUEsQ0FDaEI7SUFFTyxhQUFhLENBQUMsT0FBK0IsRUFBRSxPQUFpQixFQUFFLEtBQW9CLEVBQUU7UUFDOUYsT0FBTyxPQUFPLENBQUMsR0FBRyxDQUFDLENBQUMsR0FBRyxFQUFFLENBQUMsRUFBRSxFQUFFLENBQUM7WUFDN0IsSUFBSSxHQUFHLEVBQUUsQ0FBQztnQkFDUixPQUFPLElBQUksQ0FBQyxjQUFjLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxFQUFFLE9BQU8sQ0FBQyxDQUFDLENBQUMsR0FBRyxHQUFHLENBQUMsQ0FBQztZQUMzRCxDQUFDO1lBQ0QsTUFBTSxLQUFLLEdBQUcsSUFBSSxDQUFDLGNBQWMsQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLEVBQUUsT0FBTyxDQUFDLENBQUMsQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDO1lBQzlELE1BQU0sR0FBRyxHQUFHLElBQUksUUFBUSxDQUFDLEtBQUssQ0FBQyxNQUFNLEVBQUUsS0FBSyxDQUFDLFVBQVUsRUFBRSxLQUFLLENBQUMsVUFBVSxDQUFDLENBQUMsU0FBUyxDQUFDLENBQUMsRUFBRSxJQUFJLENBQUMsQ0FBQztZQUU5RiwyQ0FBMkM7WUFDM0MsS0FBSyxDQUFDLFlBQVksQ0FBQyxHQUFHLENBQUMsQ0FBQztZQUV4QiwrRkFBK0Y7WUFDL0YsTUFBTSxNQUFNLEdBQUcsSUFBSSxDQUFDLGNBQWMsQ0FBQyxHQUFHLEVBQUUsR0FBRyxHQUFHLENBQUMsQ0FBQyxDQUFDO1lBQ2pELE1BQU0sTUFBTSxHQUFHLElBQUksUUFBUSxDQUFDLE1BQU0sQ0FBQyxNQUFNLEVBQUUsTUFBTSxDQUFDLFVBQVUsRUFBRSxNQUFNLENBQUMsVUFBVSxDQUFDLENBQUMsU0FBUyxDQUFDLENBQUMsRUFBRSxLQUFLLENBQUMsQ0FBQztZQUVyRyxPQUFPLElBQUksQ0FBQyxjQUFjLENBQUMsR0FBRyxHQUFHLENBQUMsRUFBRSxHQUFHLEdBQUcsQ0FBQyxHQUFHLE1BQU0sQ0FBQyxDQUFDO1FBQUEsQ0FDdkQsQ0FBQyxDQUFDO0lBQUEsQ0FDSjtJQUVELFNBQVMsQ0FBQyxLQUFhLEVBQUUsV0FBdUIsRUFBTztRQUNyRCxNQUFNLHNCQUFzQixHQUFHLFdBQVcsQ0FBQyxNQUFNLEdBQUcsSUFBSSxDQUFDLG9CQUFvQixDQUFDO1FBQzlFLElBQUksUUFBZ0IsQ0FBQztRQUVyQixJQUFJLHNCQUFzQixFQUFFLENBQUM7WUFDM0IsZ0RBQWdEO1lBQ2hELFFBQVEsR0FBRyxJQUFJLENBQUMsSUFBSSxDQUFDLFVBQVUsRUFBRSxXQUFXLENBQUMsTUFBTSxDQUFDLENBQUM7UUFDdkQsQ0FBQzthQUFNLENBQUM7WUFDTixtQ0FBbUM7WUFDbkMsUUFBUSxHQUFHLElBQUksQ0FBQyxtQkFBbUIsQ0FBQztRQUN0QyxDQUFDO1FBRUQsd0JBQXdCO1FBQ3hCLElBQUksQ0FBQyxXQUFXLENBQUMsUUFBUSxFQUFFLFdBQVcsQ0FBQyxDQUFDO1FBRXhDLDZEQUE2RDtRQUM3RCw0RUFBNEU7UUFDNUUsTUFBTSxhQUFhLEdBQUcsQ0FBQyxDQUFDO1FBQ3hCLE1BQU0saUJBQWlCLEdBQUcsSUFBSSxDQUFDLG9CQUFvQixDQUFDO1FBQ3BELE1BQU0sa0JBQWtCLEdBQUcsSUFBSSxDQUFDLG9CQUFvQixHQUFHLENBQUMsQ0FBQztRQUN6RCxNQUFNLGNBQWMsR0FBRyxJQUFJLENBQUMsb0JBQW9CLEdBQUcsYUFBYSxDQUFDO1FBQ2pFLE1BQU0sZUFBZSxHQUFHLElBQUksQ0FBQyxvQkFBb0IsR0FBRyxhQUFhLENBQUM7UUFFbEUsdURBQXVEO1FBQ3ZELElBQUksR0FBRyxHQUFHLElBQUksQ0FBQyxTQUFTLEVBQUUsQ0FBQztRQUMzQixJQUFJLElBQUksR0FBRyxJQUFJLFFBQVEsQ0FBQyxHQUFHLENBQUMsTUFBTSxDQUFDLENBQUM7UUFFcEMsa0VBQWtFO1FBQ2xFLElBQUksQ0FBQyxTQUFTLENBQUMsaUJBQWlCLEVBQUUsY0FBYyxFQUFFLElBQUksQ0FBQyxDQUFDO1FBQ3hELElBQUksQ0FBQyxTQUFTLENBQUMsa0JBQWtCLEVBQUUsZUFBZSxFQUFFLElBQUksQ0FBQyxDQUFDO1FBRTFELFlBQVk7UUFDWixJQUFJLENBQUMsSUFBSSxDQUFDLEtBQUssRUFBRSxRQUFRLEVBQUUsV0FBVyxDQUFDLE1BQU0sRUFBRSxpQkFBaUIsRUFBRSxrQkFBa0IsQ0FBQyxDQUFDO1FBRXRGLHdDQUF3QztRQUN4QyxJQUFJLHNCQUFzQixFQUFFLENBQUM7WUFDM0IsSUFBSSxDQUFDLElBQUksQ0FBQyxRQUFRLEVBQUUsUUFBUSxDQUFDLENBQUM7UUFDaEMsQ0FBQztRQUVELHVGQUF1RjtRQUN2RixHQUFHLEdBQUcsSUFBSSxDQUFDLFNBQVMsRUFBRSxDQUFDO1FBQ3ZCLElBQUksR0FBRyxJQUFJLFFBQVEsQ0FBQyxHQUFHLENBQUMsTUFBTSxDQUFDLENBQUM7UUFFaEMsOERBQThEO1FBQzlELE1BQU0sYUFBYSxHQUFHLElBQUksQ0FBQyxTQUFTLENBQUMsaUJBQWlCLEVBQUUsSUFBSSxDQUFDLENBQUM7UUFDOUQsTUFBTSxVQUFVLEdBQUcsSUFBSSxDQUFDLFNBQVMsQ0FBQyxrQkFBa0IsRUFBRSxJQUFJLENBQUMsQ0FBQztRQUU1RCwrRUFBK0U7UUFDL0UsTUFBTSxXQUFXLEdBQUcsYUFBYSxLQUFLLGNBQWMsQ0FBQztRQUVyRCxvQ0FBb0M7UUFDcEMsTUFBTSxhQUFhLEdBQUcsSUFBSSxDQUFDLGNBQWMsQ0FBQyxhQUFhLEVBQUUsYUFBYSxHQUFHLFVBQVUsQ0FBQyxDQUFDO1FBRXJGLDRDQUE0QztRQUM1QyxJQUFJLENBQUMsV0FBVyxFQUFFLENBQUM7WUFDakIsSUFBSSxDQUFDLElBQUksQ0FBQyxRQUFRLEVBQUUsYUFBYSxDQUFDLENBQUM7UUFDckMsQ0FBQztRQUVELE9BQU8sYUFBYSxDQUFDO0lBQUEsQ0FDdEI7Q0FDRiJ9

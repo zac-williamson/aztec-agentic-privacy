@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { Fr, type Wallet, type AztecAddress } from "@aztec/aztec.js";
+import { Fr } from "@aztec/aztec.js/fields";
+import type { Wallet } from "@aztec/aztec.js/wallet";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type {
   AttestOptions,
   CredentialResult,
@@ -296,7 +298,10 @@ export class IsnadSDK {
     for (const byte of hashBytes) {
       value = (value << 8n) | BigInt(byte);
     }
-    return new Fr(value);
+    // Reduce modulo BN254 scalar field order — SHA256 is 256 bits, field is ~254 bits.
+    // Roughly 1/4 of hashes exceed the field modulus and need reduction; bias is negligible.
+    const BN254_P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    return new Fr(value % BN254_P);
   }
 
   private _hashKeyId(keyId: string): Fr {

@@ -18,19 +18,26 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@aztec/aztec.js": "4.0.0-devnet.2-patch.0",
     "@aztec/accounts": "4.0.0-devnet.2-patch.0",
+    "@aztec/aztec.js": "4.0.0-devnet.2-patch.0",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.0"
   },
   "devDependencies": {
     "@aztec/pxe": "4.0.0-devnet.2-patch.0",
-    "@aztec/test-wallet": "4.0.0-devnet.2-patch.0",
     "@types/node": "^22.0.0",
-    "tsup": "^8.0.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.1"
   },
-  "keywords": ["aztec", "zk", "privacy", "blockchain", "ai-agents", "credentials", "attestation"],
+  "keywords": [
+    "aztec",
+    "zk",
+    "privacy",
+    "blockchain",
+    "ai-agents",
+    "credentials",
+    "attestation"
+  ],
   "author": "Nullius",
   "license": "MIT",
   "repository": {

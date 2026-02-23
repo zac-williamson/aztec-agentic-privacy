@@ -1,0 +1,16 @@
+export declare class Fr {
+    static ZERO: Fr;
+    static MODULUS: bigint;
+    static MAX_VALUE: bigint;
+    static SIZE_IN_BYTES: number;
+    value: Uint8Array;
+    constructor(value: Uint8Array | Buffer | bigint);
+    static random(): Fr;
+    toBuffer(): Uint8Array<ArrayBufferLike>;
+    toString(): string;
+    equals(rhs: Fr): boolean;
+    isZero(): boolean;
+    static fromBuffer(value: Uint8Array): Fr;
+    static fromBufferReduce(value: Uint8Array): Fr;
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiZmllbGRzLmQudHMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9zcmMvYmFycmV0ZW5iZXJnL3Rlc3RpbmcvZmllbGRzLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiJBQVFBLHFCQUFhLEVBQUU7SUFDYixNQUFNLENBQUMsSUFBSSxLQUFjO0lBQ3pCLE1BQU0sQ0FBQyxPQUFPLFNBQXVFO0lBQ3JGLE1BQU0sQ0FBQyxTQUFTLFNBQXFCO0lBQ3JDLE1BQU0sQ0FBQyxhQUFhLFNBQU07SUFDMUIsS0FBSyxFQUFFLFVBQVUsQ0FBQztJQUVsQixZQUFZLEtBQUssRUFBRSxVQUFVLEdBQUcsTUFBTSxHQUFHLE1BQU0sRUFlOUM7SUFFRCxNQUFNLENBQUMsTUFBTSxPQUdaO0lBRUQsUUFBUSxnQ0FFUDtJQUVELFFBQVEsV0FFUDtJQUVELE1BQU0sQ0FBQyxHQUFHLEVBQUUsRUFBRSxXQUViO0lBRUQsTUFBTSxZQUVMO0lBRUQsTUFBTSxDQUFDLFVBQVUsQ0FBQyxLQUFLLEVBQUUsVUFBVSxHQUFHLEVBQUUsQ0FFdkM7SUFFRCxNQUFNLENBQUMsZ0JBQWdCLENBQUMsS0FBSyxFQUFFLFVBQVUsR0FBRyxFQUFFLENBSTdDO0NBQ0YifQ==
