@@ -9,7 +9,7 @@ import { EthAddress } from '@aztec/aztec.js/addresses';
 import { Fr, Point } from '@aztec/aztec.js/fields';
 import { type PublicKey, PublicKeys } from '@aztec/aztec.js/keys';
 import type { Wallet } from '@aztec/aztec.js/wallet';
-import IsnadRegistryContractArtifactJson from './isnad_registry-IsnadRegistry.json' with { type: 'json' };
+import IsnadRegistryContractArtifactJson from '../../../contracts/isnad_registry/target/isnad_registry-IsnadRegistry.json' with { type: 'json' };
 export const IsnadRegistryContractArtifact = loadContractArtifact(IsnadRegistryContractArtifactJson as NoirCompiledContract);
 
 
@@ -18,16 +18,16 @@ export const IsnadRegistryContractArtifact = loadContractArtifact(IsnadRegistryC
  * Type-safe interface for contract IsnadRegistry;
  */
 export class IsnadRegistryContract extends ContractBase {
-
+  
   private constructor(
     address: AztecAddress,
     wallet: Wallet,
   ) {
     super(address, IsnadRegistryContractArtifact, wallet);
   }
+  
 
-
-
+  
   /**
    * Creates a contract instance.
    * @param address - The deployed contract's address.
@@ -41,7 +41,7 @@ export class IsnadRegistryContract extends ContractBase {
     return Contract.at(address, IsnadRegistryContract.artifact, wallet) as IsnadRegistryContract;
   }
 
-
+  
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
@@ -72,9 +72,9 @@ export class IsnadRegistryContract extends ContractBase {
       opts.method ?? 'constructor',
     );
   }
+  
 
-
-
+  
   /**
    * Returns this contract's artifact.
    */
@@ -88,7 +88,7 @@ export class IsnadRegistryContract extends ContractBase {
   public static get artifactForPublic(): ContractArtifact {
     return loadContractArtifactForPublic(IsnadRegistryContractArtifactJson as NoirCompiledContract);
   }
-
+  
 
   public static get storage(): ContractStorageLayout<'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'> {
       return {
@@ -109,11 +109,11 @@ credentials: {
     }
       } as ContractStorageLayout<'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'>;
     }
-
+    
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
-
+    
     /** attest(skill_hash: field, quality: integer) */
     attest: ((skill_hash: FieldLike, quality: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
@@ -154,5 +154,5 @@ credentials: {
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
-
+  
 }

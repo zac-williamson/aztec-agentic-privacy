@@ -5,6 +5,10 @@
   },
   "isnad_registry-IsnadRegistry.json": {
     "contractName": "IsnadRegistry",
-    "hash": "297c0a0edfc9322a718d1bf8e9eea8be04d4c2e92b0c0351e60e09d28a4291b5"
+    "hash": "cb259619bc39ebbb6d437ac46a0a028ceb27461b09af7875e13f00692ded9dd1"
+  },
+  "isnad_final.json": {
+    "contractName": "IsnadRegistry",
+    "hash": "01a5d29168b43a778a025c38b9bc2ceb6600f9104c69b70e643ef488ab0942e0"
   }
 }
