@@ -29,3 +29,7 @@ export type {
   SkillTrustInfo,
   StoreCredentialOptions,
 } from "./types.js";
+export {
+  IsnadRegistryContract,
+  IsnadRegistryContractArtifact,
+} from "./artifacts/IsnadRegistry.js";

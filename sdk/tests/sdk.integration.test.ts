@@ -2,23 +2,21 @@
  * Integration tests for @nullius/isnad — require a live Aztec local network.
  *
  * Prerequisites:
- *   1. `aztec compile` run in contracts/isnad_registry/
- *   2. `aztec codegen target --outdir sdk/src/artifacts` run
- *   3. `aztec start --local-network` running at localhost:8080
- *   4. Uncomment contract calls in sdk/src/isnad.ts
+ *   1. [DONE] nargo compile in contracts/isnad_registry/
+ *   2. [DONE] npm run gen-artifacts (patches artifact + runs aztec codegen)
+ *   3. [DONE] Contract calls activated in sdk/src/isnad.ts
+ *   4. [PENDING] aztec start --local-network running at localhost:8080
+ *   5. [PENDING] Deploy contract and update DEPLOYED_CONTRACT below
  *
  * Run with: vitest run tests/sdk.integration.test.ts
  *
- * All tests in this file are skipped until the above prerequisites are met.
+ * All tests in this file are skipped until prerequisites 4 & 5 are met.
  * When activating: replace `it.skip` with `it` and fill in contract address.
  */
 import { describe, expect, it } from "vitest";
-
-// These imports will work after `aztec codegen` is run
-// import { createPXEClient } from "@aztec/aztec.js";
-// import { getSchnorrAccount } from "@aztec/accounts/schnorr";
-// import { IsnadSDK } from "../src/isnad.js";
-// import { IsnadRegistryContract } from "../src/artifacts/IsnadRegistry.js";
+import { createPXEClient } from "@aztec/aztec.js";
+import { IsnadSDK } from "../src/isnad.js";
+import { IsnadRegistryContract } from "../src/artifacts/IsnadRegistry.js";
 
 const DEVNET_URL = "http://localhost:8080";
 const DEPLOYED_CONTRACT = "0x0000000000000000000000000000000000000000"; // replace after deploy
@@ -27,12 +25,13 @@ describe("IsnadSDK — integration (requires live local network)", () => {
   // ─── SETUP ─────────────────────────────────────────────────────────────────
   //
   // Activation checklist:
-  // [ ] Run: aztec compile (in contracts/isnad_registry/)
-  // [ ] Run: aztec codegen target --outdir sdk/src/artifacts
+  // [x] Run: nargo compile (in contracts/isnad_registry/)
+  // [x] Run: npm run gen-artifacts (patches artifact + aztec codegen)
+  // [x] Contract calls activated in sdk/src/isnad.ts
+  // [x] Imports uncommented at top of this file
   // [ ] Run: aztec start --local-network
-  // [ ] Deploy contract and update DEPLOYED_CONTRACT above
-  // [ ] Uncomment imports at top of this file
-  // [ ] Uncomment contract calls in sdk/src/isnad.ts
+  // [ ] Deploy contract: IsnadRegistryContract.deploy(wallet).send().deployed()
+  // [ ] Update DEPLOYED_CONTRACT address above
   // [ ] Replace it.skip with it throughout this file
 
   it.skip("can connect to the PXE at localhost:8080", async () => {

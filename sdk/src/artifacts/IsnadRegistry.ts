@@ -9,7 +9,7 @@ import { EthAddress } from '@aztec/aztec.js/addresses';
 import { Fr, Point } from '@aztec/aztec.js/fields';
 import { type PublicKey, PublicKeys } from '@aztec/aztec.js/keys';
 import type { Wallet } from '@aztec/aztec.js/wallet';
-import IsnadRegistryContractArtifactJson from '../../../contracts/isnad_registry/target/isnad_registry-IsnadRegistry.json' with { type: 'json' };
+import IsnadRegistryContractArtifactJson from './isnad_registry-IsnadRegistry.json' with { type: 'json' };
 export const IsnadRegistryContractArtifact = loadContractArtifact(IsnadRegistryContractArtifactJson as NoirCompiledContract);
 
 
@@ -114,41 +114,41 @@ credentials: {
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
-    /** attest(skill_hash: field, quality: integer) */
-    attest: ((skill_hash: FieldLike, quality: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__attest(skill_hash: field, quality: integer) */
+    __aztec_nr_internals__attest: ((skill_hash: FieldLike, quality: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor() */
-    constructor: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__constructor() */
+    __aztec_nr_internals__constructor: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** delete_credential(key_id: field) */
-    delete_credential: ((key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__delete_credential(key_id: field) */
+    __aztec_nr_internals__delete_credential: ((key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** get_attestation_count(skill_hash: field) */
-    get_attestation_count: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__get_attestation_count(skill_hash: field) */
+    __aztec_nr_internals__get_attestation_count: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** get_credential(owner: struct, key_id: field) */
-    get_credential: ((owner: AztecAddressLike, key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__get_credential(owner: struct, key_id: field) */
+    __aztec_nr_internals__get_credential: ((owner: AztecAddressLike, key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** get_credential_for_skill(owner: struct, key_id: field, authwit_nonce: field) */
-    get_credential_for_skill: ((owner: AztecAddressLike, key_id: FieldLike, authwit_nonce: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__get_credential_for_skill(owner: struct, key_id: field, authwit_nonce: field) */
+    __aztec_nr_internals__get_credential_for_skill: ((owner: AztecAddressLike, key_id: FieldLike, authwit_nonce: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** get_trust_score(skill_hash: field) */
-    get_trust_score: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** __aztec_nr_internals__get_trust_score(skill_hash: field) */
+    __aztec_nr_internals__get_trust_score: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** __aztec_nr_internals__revoke_attestation(skill_hash: field) */
+    __aztec_nr_internals__revoke_attestation: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** __aztec_nr_internals__rotate_credential(key_id: field, new_value: array, label: field) */
+    __aztec_nr_internals__rotate_credential: ((key_id: FieldLike, new_value: FieldLike[], label: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** __aztec_nr_internals__store_credential(key_id: field, value: array, label: field) */
+    __aztec_nr_internals__store_credential: ((key_id: FieldLike, value: FieldLike[], label: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** process_message(message_ciphertext: struct, message_context: struct) */
     process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** revoke_attestation(skill_hash: field) */
-    revoke_attestation: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** rotate_credential(key_id: field, new_value: array, label: field) */
-    rotate_credential: ((key_id: FieldLike, new_value: FieldLike[], label: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** store_credential(key_id: field, value: array, label: field) */
-    store_credential: ((key_id: FieldLike, value: FieldLike[], label: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** sync_state() */
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

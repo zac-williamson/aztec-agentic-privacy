@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "gen-artifacts": "node scripts/gen-artifacts.js",
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
     "test:watch": "vitest",
