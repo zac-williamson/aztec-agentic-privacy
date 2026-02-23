@@ -1,0 +1,40 @@
+{
+  "name": "@nullius/isnad",
+  "version": "0.1.0",
+  "description": "ZK Skill Attestation and Credential Registry for AI agents — built on Aztec",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aztec/aztec.js": "4.0.0-devnet.2-patch.0",
+    "@aztec/accounts": "4.0.0-devnet.2-patch.0",
+    "@aztec/stdlib": "4.0.0-devnet.2-patch.0"
+  },
+  "devDependencies": {
+    "@aztec/pxe": "4.0.0-devnet.2-patch.0",
+    "@aztec/test-wallet": "4.0.0-devnet.2-patch.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "keywords": ["aztec", "zk", "privacy", "blockchain", "ai-agents", "credentials", "attestation"],
+  "author": "Nullius",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nullius-/isnad-chain"
+  }
+}
