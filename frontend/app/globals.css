@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #080808;
+  --foreground: #e5e5e5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100vh;
+  background-color: #080808;
+  color: #e5e5e5;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+/* Monospace for all technical data */
+.mono {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* Input focus ring */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px #f59e0b;
+}
+
+/* Range input styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-track {
+  background: #222;
+  height: 4px;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f59e0b;
+  margin-top: -6px;
+}
+input[type="range"]::-moz-range-track {
+  background: #222;
+  height: 4px;
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: none;
+}
+
+/* File upload zone */
+.upload-zone {
+  border: 1px dashed #333;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.05);
+}
+
+/* Scanline animation for proof progress */
+@keyframes scanline {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.scanline {
+  animation: scanline 1.8s linear infinite;
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}

@@ -70,8 +70,8 @@ export class IsnadSDK {
     const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
 
     const [trustScore, attestationCount] = await Promise.all([
-      this.contract.methods.__aztec_nr_internals__get_trust_score(hash).simulate({ from: this.from }),
-      this.contract.methods.__aztec_nr_internals__get_attestation_count(hash).simulate({ from: this.from }),
+      this.contract.methods.get_trust_score(hash).simulate({ from: this.from }),
+      this.contract.methods.get_attestation_count(hash).simulate({ from: this.from }),
     ]);
 
     return {
@@ -103,7 +103,7 @@ export class IsnadSDK {
     }
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__attest(hash, opts.quality)
+      .attest(hash, opts.quality)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }
@@ -122,7 +122,7 @@ export class IsnadSDK {
     const label = this._encodeLabel(opts.label);
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__store_credential(keyId, value, label)
+      .store_credential(keyId, value, label)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }
@@ -139,7 +139,7 @@ export class IsnadSDK {
     const keyIdHash = this._hashKeyId(keyId);
 
     const result = await this.contract.methods
-      .__aztec_nr_internals__get_credential(this.from, keyIdHash)
+      .get_credential(this.from, keyIdHash)
       .simulate({ from: this.from });
     // get_credential returns Option<[Field; 4]> — check if Some
     if (!result || (result as any).is_none?.()) return null;
@@ -163,7 +163,7 @@ export class IsnadSDK {
     const nonce = opts.authwitNonce ?? 0n;
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__get_credential_for_skill(opts.owner, keyId, new Fr(nonce))
+      .get_credential_for_skill(opts.owner, keyId, new Fr(nonce))
       .send({ from: this.from });
     // Return value is carried in the receipt (private tx return value via PXE)
     const rawValue = (receipt as any).returnValue as [Fr, Fr, Fr, Fr];
@@ -186,7 +186,7 @@ export class IsnadSDK {
     const nonce = opts.nonce ?? BigInt(Date.now());
 
     const action = this.contract.methods
-      .__aztec_nr_internals__get_credential_for_skill(this.from, keyId, new Fr(nonce));
+      .get_credential_for_skill(this.from, keyId, new Fr(nonce));
     const call = await action.getFunctionCall();
     await this.wallet.createAuthWit(this.from, { caller: opts.skillAddress, call });
     return { authwitNonce: nonce };
@@ -207,7 +207,7 @@ export class IsnadSDK {
     const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__revoke_attestation(hash)
+      .revoke_attestation(hash)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }
@@ -224,7 +224,7 @@ export class IsnadSDK {
     const keyIdHash = this._hashKeyId(keyId);
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__delete_credential(keyIdHash)
+      .delete_credential(keyIdHash)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }
@@ -244,7 +244,7 @@ export class IsnadSDK {
     const newLabel = this._encodeLabel(opts.newLabel);
 
     const receipt = await this.contract.methods
-      .__aztec_nr_internals__rotate_credential(keyIdHash, newValue, newLabel)
+      .rotate_credential(keyIdHash, newValue, newLabel)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }

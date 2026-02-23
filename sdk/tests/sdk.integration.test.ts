@@ -5,13 +5,13 @@
  *   1. [DONE] nargo compile in contracts/isnad_registry/
  *   2. [DONE] npm run gen-artifacts (patches artifact + runs aztec codegen)
  *   3. [DONE] Contract calls activated in sdk/src/isnad.ts
- *   4. [PENDING] aztec start --local-network running at localhost:8080
- *   5. [PENDING] Deploy contract and update DEPLOYED_CONTRACT below
+ *   4. [DONE] aztec start --local-network running at localhost:8080 (Docker: aztec-local-network)
+ *   5. [DONE] Deploy contract: 0x08555112c9393f5fe3aac7900601db2ed68258c6b573ae7c79a46a6de0c0aebc
  *
  * Run with: vitest run tests/sdk.integration.test.ts
  *
- * All tests in this file are skipped until prerequisites 4 & 5 are met.
- * When activating: replace `it.skip` with `it` and fill in contract address.
+ * PXE connectivity test is live. Transactional tests (ZK proofs) remain skipped
+ * — they require EmbeddedWallet + account setup + 10-60s proof time each.
  */
 import { describe, expect, it } from "vitest";
 import { createPXEClient } from "@aztec/aztec.js";
@@ -19,25 +19,25 @@ import { IsnadSDK } from "../src/isnad.js";
 import { IsnadRegistryContract } from "../src/artifacts/IsnadRegistry.js";
 
 const DEVNET_URL = "http://localhost:8080";
-const DEPLOYED_CONTRACT = "0x0000000000000000000000000000000000000000"; // replace after deploy
+const DEPLOYED_CONTRACT = "0x08555112c9393f5fe3aac7900601db2ed68258c6b573ae7c79a46a6de0c0aebc";
 
 describe("IsnadSDK — integration (requires live local network)", () => {
   // ─── SETUP ─────────────────────────────────────────────────────────────────
   //
   // Activation checklist:
   // [x] Run: nargo compile (in contracts/isnad_registry/)
-  // [x] Run: npm run gen-artifacts (patches artifact + aztec codegen)
-  // [x] Contract calls activated in sdk/src/isnad.ts
-  // [x] Imports uncommented at top of this file
-  // [ ] Run: aztec start --local-network
-  // [ ] Deploy contract: IsnadRegistryContract.deploy(wallet).send().deployed()
-  // [ ] Update DEPLOYED_CONTRACT address above
-  // [ ] Replace it.skip with it throughout this file
+  // [x] Run: bb aztec_process (generates VKs)
+  // [x] Strip __aztec_nr_internals__ prefix (jq step)
+  // [x] Run: aztec codegen (regenerated TypeScript bindings)
+  // [x] Contract calls activated in sdk/src/isnad.ts (method names corrected)
+  // [x] Run: aztec start --local-network (Docker: aztec-local-network, port 8080)
+  // [x] Deploy contract: 0x08555112c9393f5fe3aac7900601db2ed68258c6b573ae7c79a46a6de0c0aebc
+  // [x] Update DEPLOYED_CONTRACT address above
 
-  it.skip("can connect to the PXE at localhost:8080", async () => {
-    // const pxe = createPXEClient(DEVNET_URL);
-    // const nodeInfo = await pxe.getPXEInfo();
-    // expect(nodeInfo.protocolContractAddresses).toBeDefined();
+  it("can connect to the PXE at localhost:8080", async () => {
+    const pxe = createPXEClient(DEVNET_URL);
+    const nodeInfo = await pxe.getPXEInfo();
+    expect(nodeInfo.protocolContractAddresses).toBeDefined();
   });
 
   it.skip("can deploy IsnadRegistry contract", async () => {
