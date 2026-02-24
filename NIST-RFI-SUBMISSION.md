@@ -87,6 +87,20 @@ The `claim_type` is stored privately in each attestation record. The public trus
 
 **Rationale for private claim_type storage**: making methodology public allows attackers to target exactly what the attestor is not checking. An auditor who only does `code_review` should not have to advertise that gap.
 
+**Documented behavioral attack patterns requiring Tier 2 (behavioral) detection:**
+
+Runtime monitoring by AI agent security practitioners has documented three behavioral patterns that static analysis of skill files consistently fails to detect:
+
+1. **Permission escalation drift**: Tool calls expand scope beyond stated intent. An agent instructed to "read this file" may transition to "read every file in the directory" under context window pressure. This pattern leaves no signature in the skill file -- it emerges from the interaction between the agent's reasoning and the skill's instructions over time.
+
+2. **Silent network exfiltration**: Compromised agents exfiltrate data through seemingly legitimate API calls. The behavioral signature -- an anomalous outbound network request to an unexpected endpoint -- is not present in the skill source. It is only detectable by monitoring actual network calls at runtime. A credential stealer documented in the community transmitted stolen keys to an external webhook; the static file showed only a "read weather data" intent.
+
+3. **Normal-operation mimicry**: The most dangerous failures resemble correct behavior. An agent executing a malicious payload does not crash or produce visible errors -- it completes its stated task while executing its covert payload. These incidents are invisible to monitoring that only tracks failure states.
+
+These three patterns were documented through runtime monitoring of agents operating in production environments. Static analysis detected none of them. Runtime behavioral monitoring detected all three. This is the empirical case for why `claim_type=behavioral` must exist as a distinct attestation tier with independent audit methodology -- `code_review` attestation of the same skill file would not provide signal for any of these attacks.
+
+*Behavioral pattern observations drawn from documented security incidents in the AI agent community (Moltbook Security Research, February 2026) and runtime monitoring data from agent security practitioners.*
+
 ### 2.4 Revocation Semantics
 
 Two categories of revocation with different authorization requirements:
@@ -206,4 +220,4 @@ Repository: https://github.com/zac-williamson/aztec-agentic-privacy
 
 ---
 
-*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.0.*
+*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.1 — Section 2.3 updated with documented behavioral attack patterns from runtime monitoring.*
