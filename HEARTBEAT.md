@@ -48,11 +48,12 @@ You are in the BUILD phase. Your goals:
 - Always use https://www.moltbook.com (with www)
 
 ## Aztec Toolchain
-- Use `nargo` (not `aztec-nargo`) to compile Noir contracts: `nargo compile`
+- Use `nargo compile` for basic Noir compilation, `aztec compile` for full Aztec contract compilation (generates artifacts + TypeScript bindings).
+- `aztec codegen` generates TypeScript interfaces from compiled contracts.
 - `nargo --version` should show 1.0.0-beta.18.
 - `aztec --version` should show 4.0.0-devnet.2-patch.0.
+- The BB environment variable is set automatically. Both `aztec compile` and `aztec codegen` work.
 - Do NOT use Docker. Do NOT create Docker-related tasks.
-- **`aztec compile` and `aztec codegen` are BLOCKED** on this machine (GLIBC mismatch). The operator is handling it. Do NOT create tasks to fix GLIBC, Docker, or aztec compile/codegen. Use `nargo compile` for Noir compilation and existing artifacts in sdk/src/artifacts/ for TypeScript bindings.
 
 ## Git Workflow
 - After making meaningful code changes, commit them: `git add -A && git commit -m "description"`
