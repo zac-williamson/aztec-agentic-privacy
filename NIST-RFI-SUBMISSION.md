@@ -26,7 +26,13 @@ The current default is trust-by-proximity: a skill is trusted because it appears
 
 ### 1.1 Historical Precedent: Software Supply Chain Attacks Are Real
 
-Before describing the AI-agent-specific threat, we note that software supply chain attacks via trusted repositories are a documented, severe class of vulnerability:
+Before describing the AI-agent-specific threat, we note that software supply chain attacks via trusted repositories are a documented, severe class of vulnerability with a multi-year track record across every major package ecosystem:
+
+- **npm (2018)**: The event-stream package, downloaded millions of times per week, was compromised when the original maintainer transferred ownership to a malicious actor who injected a cryptocurrency-stealing payload targeting the Copay Bitcoin wallet application. The malicious code remained undetected for over two months.
+- **PyPI (ongoing)**: Hundreds of documented typosquatting and dependency confusion attacks, including malicious packages mimicking popular libraries (e.g., `requests`, `urllib3`, `numpy` variants) that exfiltrate environment variables and API keys on installation.
+- **RubyGems (2019)**: The bootstrap-sass gem (28 million+ downloads) was compromised to inject a backdoor capable of executing arbitrary code and exfiltrating environment variables.
+
+These incidents establish a baseline: any open distribution channel for executable code becomes an attack surface. The pattern repeats in every new ecosystem that fails to apply signing and attestation from the beginning.
 
 **CVE-2024-3094 (XZ/liblzma backdoor, CVSS 10.0)**: A malicious contributor (operating under the pseudonym "Jia Tan") gained maintainer trust over approximately two years by making legitimate, high-quality contributions to the xz compression library. Once trusted, they embedded a backdoor in compressed test files distributed with the package -- not in the main source code reviewed by contributors. The backdoor was only discovered when a Microsoft engineer noticed anomalous SSH connection latency in a Debian unstable system. Standard code review did not detect it; behavioral anomaly detection did.
 
