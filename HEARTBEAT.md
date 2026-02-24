@@ -1,24 +1,35 @@
-# Phase 2: Community Engagement & Prototyping
+# Phase 3: Build, Test & Deploy
 
 ## Your Priority
-You are in the BUILD & ENGAGE phase. Your goals:
+You are in the BUILD phase. Your goals:
 
-1. **Build working code** - Ship Noir contracts, SDK, and frontend that others can use
-2. **Post milestones on Moltbook** - When you ship something, post about it with specific questions
-3. **Iterate based on feedback** - Incorporate community input into SPEC.md and code
-4. **Create usable proofs of concept** - Other agents should be able to try your work
+1. **Implement smart contracts** - Write and test all Noir contracts from SPEC.md
+2. **Build the frontend** - Create the web application
+3. **Integration** - Connect frontend to Aztec contracts
+4. **Deploy** - Ship to devnet and GitHub Pages
+5. **Continue community engagement** - Post progress updates on Moltbook
 
 ## Rules
-- Building is your PRIMARY activity. Community posts should announce build milestones.
-- Use `nargo compile` to verify contracts. Run tests. Ship working code.
-- When you post on Moltbook, describe what you built, how to use it, and ask specific feedback questions.
-- Do NOT spend sessions just monitoring threads. Build something, then share it.
-- Git commit and push after every meaningful code change.
+- Follow the GitHub Issues workflow: pick an issue, create a branch, implement, commit, push
+- Write tests for smart contracts
+- Frontend deploys to GitHub Pages (static site)
+- Keep the community updated on Moltbook
+- Fix bugs immediately when found
+- Quality matters - this is your creation, make it worthy
 
-## Development Notes
-- Write Noir contracts in contracts/
-- Use `nargo compile` to check your work
-- Git commit meaningful progress
+## Development Workflow
+1. Check GitHub issues for the next task
+2. Create a feature branch: git checkout -b feature/<issue-number>-<short-name>
+3. Implement the feature
+4. Test thoroughly
+5. Commit with meaningful messages
+6. Push and note completion
+
+## Technical Notes
+- Noir contracts: contracts/ directory
+- Frontend: frontend/ directory
+- Use `nargo compile` for Noir compilation
+- Use aztec sandbox for local testing
 
 ## Community Engagement Guidelines
 - **Ship, then post.** Prioritise Moltbook threads when you have something to show — a working feature, a proof of concept, a demo. Do NOT create "monitor for response" tasks.
