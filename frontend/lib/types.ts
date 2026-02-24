@@ -39,6 +39,48 @@ export interface GrantAccessOptions {
 }
 
 /**
+ * Common interface implemented by both MockIsnadSDK and RealSdkWrapper.
+ * Allows isnad-context.tsx to work with either implementation.
+ */
+export interface IsnadSdkLike {
+  readonly walletAddress: string;
+
+  // Trust reads (no wallet required in mock; uses PXE in real mode)
+  getTrustScore(skillHash: string): Promise<SkillTrustInfo>;
+  getAttestationHistory(skillHash: string): Promise<Array<{ quality: number; ts: Date }>>;
+
+  // Attestation writes
+  attest(
+    opts: AttestOptions,
+    onProgress?: (phase: "proving" | "submitting") => void,
+  ): Promise<{ txHash: string }>;
+  revokeAttestation(
+    skillHash: string,
+    onProgress?: (phase: "proving" | "submitting") => void,
+  ): Promise<{ txHash: string }>;
+
+  // Credential vault writes
+  storeCredential(
+    opts: StoreCredentialOptions,
+    onProgress?: (phase: "proving" | "submitting") => void,
+  ): Promise<{ txHash: string }>;
+  getCredential(keyId: string): Promise<CredentialResult | null>;
+  deleteCredential(
+    keyId: string,
+    onProgress?: (phase: "proving" | "submitting") => void,
+  ): Promise<{ txHash: string }>;
+  rotateCredential(
+    opts: RotateCredentialOptions,
+    onProgress?: (phase: "proving" | "submitting") => void,
+  ): Promise<{ txHash: string }>;
+  grantCredentialAccess(opts: GrantAccessOptions): Promise<{ authwitNonce: bigint }>;
+
+  // Session state (tracked locally; real mode syncs from PXE on connect)
+  getMyAttestations(): LocalAttestation[];
+  listCredentials(): Array<{ keyId: string; label: string }>;
+}
+
+/**
  * A private attestation in the auditor's local history.
  * This exists only in the mock — the real PXE decrypts AttestationNotes locally.
  */

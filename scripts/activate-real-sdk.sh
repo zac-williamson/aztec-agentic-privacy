@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# ─── activate-real-sdk.sh ──────────────────────────────────────────────────────
+#
+# One-command script to switch the Isnad Chain frontend from mock SDK to real SDK.
+#
+# Prerequisites:
+#   - Docker accessible (check: docker ps)
+#   - aztec CLI installed (~/.aztec/bin/aztec)
+#   - Node.js 22+ installed
+#
+# What this script does:
+#   1. Verifies Docker and aztec are available
+#   2. Starts aztec local network (PXE + sequencer at localhost:8080)
+#   3. Installs @aztec/aztec.js and @aztec/accounts in the frontend
+#   4. Builds the @nullius/isnad SDK package
+#   5. Deploys the IsnadRegistry contract to the local network
+#   6. Writes the contract address to frontend/.env.local
+#
+# After this script completes:
+#   cd frontend && npm run dev
+#   Open http://localhost:3000
+#   Click "Connect Wallet" to connect to the real PXE
+
+set -e
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONTRACTS_DIR="$PROJECT_ROOT/contracts/isnad_registry"
+SDK_DIR="$PROJECT_ROOT/sdk"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+AZTEC_VERSION="4.0.0-devnet.2-patch.0"
+
+echo "═══════════════════════════════════════════════════════"
+echo "  Isnad Chain — Real SDK Activation"
+echo "═══════════════════════════════════════════════════════"
+echo ""
+
+# ─── Step 1: Check prerequisites ─────────────────────────────────────────────
+
+echo "[1/6] Checking prerequisites..."
+
+if ! docker ps >/dev/null 2>&1; then
+  echo "ERROR: Docker is not accessible."
+  echo "  This machine has a Docker socket permission issue."
+  echo "  Fix options:"
+  echo "    a) Add user to docker group: sudo usermod -aG docker \$USER && newgrp docker"
+  echo "    b) Upgrade AMI to one with GLIBC 2.38+ (needed for aztec's bb binary)"
+  echo "    c) Use a different machine with Docker access"
+  exit 1
+fi
+
+AZTEC_BIN=""
+for candidate in ~/.aztec/bin/aztec ~/.aztec/current/bin/aztec; do
+  if [ -f "$candidate" ]; then
+    AZTEC_BIN="$candidate"
+    break
+  fi
+done
+
+if [ -z "$AZTEC_BIN" ]; then
+  echo "ERROR: aztec CLI not found."
+  echo "  Install it with: bash -i <(curl -s https://install.aztec.network)"
+  exit 1
+fi
+
+echo "  ✓ Docker accessible"
+echo "  ✓ aztec CLI: $AZTEC_BIN"
+
+# ─── Step 2: Start local network ─────────────────────────────────────────────
+
+echo ""
+echo "[2/6] Starting Aztec local network..."
+echo "  (This may take 30-60 seconds)"
+
+# Check if already running
+if curl -s http://localhost:8080/node-info >/dev/null 2>&1; then
+  echo "  ✓ Local network already running at localhost:8080"
+else
+  # Start in background
+  "$AZTEC_BIN" start --local-network &
+  AZTEC_PID=$!
+  echo "  Started local network (PID $AZTEC_PID)"
+
+  # Wait for PXE to be ready (up to 90 seconds)
+  echo "  Waiting for PXE to be ready..."
+  for i in $(seq 1 90); do
+    if curl -s http://localhost:8080/node-info >/dev/null 2>&1; then
+      echo "  ✓ PXE ready at localhost:8080 (${i}s)"
+      break
+    fi
+    sleep 1
+    if [ $i -eq 90 ]; then
+      echo "  ERROR: PXE did not start within 90 seconds"
+      kill $AZTEC_PID 2>/dev/null || true
+      exit 1
+    fi
+  done
+fi
+
+# ─── Step 3: Install frontend packages ───────────────────────────────────────
+
+echo ""
+echo "[3/6] Installing Aztec packages in frontend..."
+
+cd "$FRONTEND_DIR"
+npm install \
+  "@aztec/aztec.js@$AZTEC_VERSION" \
+  "@aztec/accounts@$AZTEC_VERSION" \
+  --save
+
+echo "  ✓ @aztec/aztec.js@$AZTEC_VERSION installed"
+echo "  ✓ @aztec/accounts@$AZTEC_VERSION installed"
+
+# ─── Step 4: Build the @nullius/isnad SDK ────────────────────────────────────
+
+echo ""
+echo "[4/6] Building @nullius/isnad SDK..."
+
+cd "$SDK_DIR"
+npm run build
+
+# Link the SDK as a local file dependency in the frontend
+cd "$FRONTEND_DIR"
+npm install "$SDK_DIR" --save
+
+echo "  ✓ @nullius/isnad built and linked"
+
+# ─── Step 5: Deploy IsnadRegistry contract ───────────────────────────────────
+
+echo ""
+echo "[5/6] Deploying IsnadRegistry contract..."
+
+cd "$CONTRACTS_DIR"
+
+# Run aztec compile (requires transpilation — needs Docker/bb binary)
+echo "  Compiling contract..."
+"$AZTEC_BIN" compile . 2>&1 | tail -5
+
+# Deploy
+echo "  Deploying..."
+DEPLOY_OUTPUT=$("$AZTEC_BIN" deploy target/isnad_registry-IsnadRegistry.json \
+  --from 0 \
+  --rpc-url http://localhost:8080 \
+  2>&1)
+
+echo "$DEPLOY_OUTPUT"
+
+# Extract contract address from output
+CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep -oP '0x[0-9a-fA-F]{64}' | head -1)
+
+if [ -z "$CONTRACT_ADDRESS" ]; then
+  echo "  ERROR: Could not extract contract address from deploy output"
+  echo "  Full output:"
+  echo "$DEPLOY_OUTPUT"
+  exit 1
+fi
+
+echo "  ✓ Contract deployed at: $CONTRACT_ADDRESS"
+
+# Save contract address for reference
+echo "$CONTRACT_ADDRESS" > "$PROJECT_ROOT/scripts/contract-address.txt"
+
+# ─── Step 6: Write .env.local ─────────────────────────────────────────────────
+
+echo ""
+echo "[6/6] Writing frontend/.env.local..."
+
+cat > "$FRONTEND_DIR/.env.local" << EOF
+# Generated by scripts/activate-real-sdk.sh
+# $(date)
+
+NEXT_PUBLIC_USE_MOCK=false
+NEXT_PUBLIC_PXE_URL=http://localhost:8080
+NEXT_PUBLIC_CONTRACT_ADDRESS=$CONTRACT_ADDRESS
+EOF
+
+echo "  ✓ .env.local written"
+
+# ─── Done ─────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "═══════════════════════════════════════════════════════"
+echo "  Activation complete!"
+echo ""
+echo "  Contract address: $CONTRACT_ADDRESS"
+echo "  PXE endpoint:     http://localhost:8080"
+echo "  Mock mode:        disabled"
+echo ""
+echo "  Start the frontend:"
+echo "    cd frontend && npm run dev"
+echo "    Open: http://localhost:3000"
+echo ""
+echo "  Click 'Connect Wallet' to connect to the real PXE."
+echo "  ZK proof generation takes 15-60 seconds per transaction."
+echo "═══════════════════════════════════════════════════════"

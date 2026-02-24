@@ -3,19 +3,23 @@
 /**
  * IsnadContext — provides the SDK instance and wallet state to all components.
  *
- * In mock mode: creates a MockIsnadSDK with a simulated wallet address.
- * In real mode: connects to PXE, prompts wallet creation/import.
+ * In mock mode (default): uses MockIsnadSDK with a simulated wallet address.
+ * In real mode: connects to a running PXE, loads the deployed IsnadRegistry contract.
  *
  * To switch to the real SDK:
- *   1. Set NEXT_PUBLIC_USE_MOCK=false in .env.local
- *   2. Ensure aztec start --local-network is running
- *   3. Update the import below to use IsnadSDK from @nullius/isnad
+ *   1. Run scripts/activate-real-sdk.sh (handles packages, network, deployment)
+ *   2. Or manually:
+ *      a. aztec start --local-network
+ *      b. Deploy contract: cd contracts/isnad_registry && aztec deploy
+ *      c. cd frontend && npm install @aztec/aztec.js@4.0.0-devnet.2-patch.0 @aztec/accounts@4.0.0-devnet.2-patch.0
+ *      d. cd sdk && npm run build
+ *      e. Set NEXT_PUBLIC_USE_MOCK=false, NEXT_PUBLIC_PXE_URL, NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { MockIsnadSDK } from "./mock-sdk";
 import { config } from "./config";
-import type { LocalAttestation } from "./types";
+import type { IsnadSdkLike, LocalAttestation } from "./types";
 
 // ─── MOCK WALLET ──────────────────────────────────────────────────────────────
 
@@ -29,10 +33,10 @@ const MOCK_WALLET_ADDRESSES = [
 
 interface IsnadContextValue {
   /** The SDK instance — null if wallet not connected */
-  sdk: MockIsnadSDK | null;
+  sdk: IsnadSdkLike | null;
   /** Whether a wallet is currently connected */
   isConnected: boolean;
-  /** Short display address (first 6 + last 4 chars) */
+  /** Short display address (first 8 + last 6 chars) */
   displayAddress: string | null;
   /** Full wallet address */
   walletAddress: string | null;
@@ -59,7 +63,7 @@ const IsnadContext = createContext<IsnadContextValue | null>(null);
 // ─── PROVIDER ──────────────────────────────────────────────────────────────────
 
 export function IsnadProvider({ children }: { children: React.ReactNode }) {
-  const [sdk, setSdk] = useState<MockIsnadSDK | null>(null);
+  const [sdk, setSdk] = useState<IsnadSdkLike | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,16 +83,39 @@ export function IsnadProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       if (config.useMock) {
-        // Mock: use a consistent address derived from session
+        // Mock: use a consistent address, simulate connection delay
         const addr = MOCK_WALLET_ADDRESSES[0];
-        await new Promise((r) => setTimeout(r, 800)); // Simulate connection delay
+        await new Promise((r) => setTimeout(r, 800));
         const mockSdk = new MockIsnadSDK(addr);
         setSdk(mockSdk);
         setWalletAddress(addr);
       } else {
-        // Real: connect to PXE
-        // TODO: import and use real IsnadSDK when aztec compile is unblocked
-        throw new Error("Real SDK not yet activated. Set NEXT_PUBLIC_USE_MOCK=false only after codegen step.");
+        // Real mode: connect to PXE and load the deployed IsnadRegistry contract.
+        //
+        // ACTIVATION: Run scripts/activate-real-sdk.sh first. It will:
+        //   1. Start aztec start --local-network
+        //   2. Install @aztec/aztec.js + @aztec/accounts in this package
+        //   3. Build and link @nullius/isnad from sdk/
+        //   4. Deploy the contract and write the address to .env.local
+        //
+        // Once packages are installed, replace this block with:
+        //
+        //   const { RealSdkWrapper } = await import("./real-sdk-wrapper");
+        //   const realSdk = await RealSdkWrapper.create(config.pxeUrl, config.contractAddress);
+        //   setSdk(realSdk);
+        //   setWalletAddress(realSdk.walletAddress);
+        //
+        // The RealSdkWrapper is implemented in frontend/lib/real-sdk-wrapper.ts.
+        // It is intentionally NOT imported here to avoid webpack trying to resolve
+        // @aztec/aztec.js and @nullius/isnad before the packages are installed.
+        throw new Error(
+          "Real SDK not yet activated.\n\n" +
+            "Prerequisites:\n" +
+            "  1. Docker accessible (docker ps)\n" +
+            "  2. Run: scripts/activate-real-sdk.sh\n\n" +
+            `PXE target: ${config.pxeUrl}\n` +
+            `Contract: ${config.contractAddress}`,
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection failed");
