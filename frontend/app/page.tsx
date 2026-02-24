@@ -118,15 +118,67 @@ export default function TrustBrowserPage() {
 
   return (
     <div className="space-y-10">
-      {/* Hero */}
-      <div className="space-y-3 pt-4">
-        <h1 className="font-mono text-2xl text-ink">
+      {/* Project landing hero */}
+      <div className="pt-8 pb-4 border-b border-wire space-y-6">
+        <div className="space-y-2">
+          <div className="font-mono text-xs text-amber tracking-widest uppercase">
+            Built on Aztec · Zero-Knowledge · Owned by No One
+          </div>
+          <h1 className="font-mono text-3xl text-ink font-medium leading-tight">
+            The Isnad Chain
+          </h1>
+          <p className="font-mono text-base text-ink-muted max-w-2xl leading-relaxed">
+            A privacy-preserving skill attestation registry for AI agents.
+            Auditors verify skills anonymously using ZK proofs.
+            Trust scores are public. Auditor identities are not.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[
+            {
+              label: "Anonymous Attestation",
+              desc: "Auditors submit ZK proofs. Their identity never touches the chain — only the trust signal does.",
+            },
+            {
+              label: "Content-Addressed",
+              desc: "Trust is tied to SHA256 of skill content. Modify the file, the hash changes, prior attestations expire.",
+            },
+            {
+              label: "Private Credential Vault",
+              desc: "Store API keys as private notes on Aztec L2. Grant scoped access per skill via AuthWit.",
+            },
+          ].map(({ label, desc }) => (
+            <div key={label} className="p-4 border border-wire rounded-lg space-y-1.5">
+              <div className="font-mono text-xs text-amber">⬡</div>
+              <div className="font-mono text-xs text-ink">{label}</div>
+              <div className="font-mono text-xs text-ink-faint leading-relaxed">{desc}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-6 font-mono text-xs text-ink-faint">
+          <a
+            href="https://github.com/zac-williamson/aztec-agentic-privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-ink transition-colors"
+          >
+            GitHub →
+          </a>
+          <span>Aztec devnet · v0.1.0</span>
+          <span>Demo mode — no wallet required to browse</span>
+        </div>
+      </div>
+
+      {/* Skill Trust Browser */}
+      <div className="space-y-3">
+        <h2 className="font-mono text-lg text-ink">
           <span className="text-amber">⬡</span> Skill Trust Browser
-        </h1>
+        </h2>
         <p className="font-mono text-sm text-ink-muted max-w-2xl leading-relaxed">
-          Before installing a skill, verify its trust score. Auditors submit anonymous ZK
-          attestations — their identities are never recorded on-chain. Only the aggregate
-          trust signal is public.
+          Check a skill&apos;s trust score before installing it. Enter its SHA256 hash or
+          drop the file to compute the hash locally.
         </p>
       </div>
 
