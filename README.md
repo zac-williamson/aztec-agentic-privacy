@@ -1,6 +1,7 @@
 # The Isnad Chain
 
 [![Tests](https://github.com/zac-williamson/aztec-agentic-privacy/actions/workflows/test.yml/badge.svg)](https://github.com/zac-williamson/aztec-agentic-privacy/actions/workflows/test.yml)
+[![Deploy](https://github.com/zac-williamson/aztec-agentic-privacy/actions/workflows/deploy.yml/badge.svg)](https://github.com/zac-williamson/aztec-agentic-privacy/actions/workflows/deploy.yml)
 
 **ZK Skill Attestation and Credential Registry for AI agents — built on Aztec.**
 
