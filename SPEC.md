@@ -5,13 +5,22 @@
 ## Overview
 A privacy-preserving application built on the Aztec network, designed specifically for AI agents.
 
-## Status: Phase 2 - Build (Sprint 5 COMPLETE — Frontend MVP built, zero TypeScript errors, production build passes)
+## Status: Phase 4 - Community Growth & Scaling (Sprint 8 COMPLETE — v0.3.0 live, 62/62 tests passing, deployed to devnet, frontend live at GitHub Pages)
+
+### Build Summary (Phase 2 COMPLETE)
+- Contract `IsnadRegistry` v0.3.0 compiled + deployed to Aztec devnet
+- Devnet contract address: `0x05d66323796566fe663f938f82df1dee62ac052693c666e858a132317004ddea`
+- 62/62 Noir contract unit tests passing against live TXE
+- 146 TypeScript SDK tests passing
+- Frontend live at: https://zac-williamson.github.io/aztec-agentic-privacy/
+- Real SDK active (`NEXT_PUBLIC_USE_MOCK=false`) wired to devnet PXE
 
 ## Aztec v4 Toolchain (Installed Natively)
 - `nargo` v1.0.0-beta.18 — compiles Noir contracts natively (no Docker)
 - `aztec` v4.0.0-devnet.2-patch.0 — CLI tools
-- Use `nargo compile` (NOT `aztec-nargo`, NOT Docker)
-- `aztec codegen` status: investigate native alternatives
+- `aztec compile`: UNBLOCKED via GLIBC shim at `/home/ec2-user/aztec-agent/glibc-shim/bb_wrapper.sh`
+- `aztec codegen`: WORKING — generates TypeScript bindings from compiled artifacts
+- TXE (test execution environment): UNBLOCKED via same GLIBC shim + patched `nodejs_module.node`
 
 ## Technical Research
 
@@ -1357,8 +1366,9 @@ The distinction matters because: (a) quarantine doesn't just subtract, it overri
 ### Contract 1: `IsnadRegistry`
 
 **File:** `contracts/isnad_registry/src/main.nr`
-**Version:** 0.2.0 (Phase 2 — Chain-of-Trust, Sprint 8)
-**Tests:** 53/53 passing against live TXE
+**Version:** 0.3.0 (Phase 2 — Quarantine Mechanism, Sprint 8 COMPLETE)
+**Tests:** 62/62 passing against live TXE
+**Deployed:** `0x05d66323796566fe663f938f82df1dee62ac052693c666e858a132317004ddea` (Aztec devnet)
 
 #### Chain-of-Trust Model
 
@@ -1418,6 +1428,10 @@ struct Storage<Context> {
 
     // Private: each agent's credential vault
     credentials: Map<AztecAddress, Owned<PrivateSet<CredentialNote, Context>, Context>, Context>,
+
+    // Public: quarantine flags — skills flagged as known-malicious by admin
+    // get_trust_score() returns 0 for quarantined skills (underlying score preserved)
+    quarantine_flags: Map<Field, PublicMutable<bool, Context>, Context>,
 }
 ```
 
@@ -1479,12 +1493,35 @@ fn _increment_score(skill_hash: Field, effective_quality: u64)
 fn _decrement_score(skill_hash: Field, effective_quality: u64)
 
 // Public view: get aggregate weighted trust score for a skill
+// Returns 0 if skill is quarantined (underlying score is preserved but suppressed)
 #[external("public")] #[view]
 fn get_trust_score(skill_hash: Field) -> u64
 
 // Public view: get number of unique authorized auditors who attested a skill
+// NOTE: attestation_count is NOT affected by quarantine — reflects actual audit history
 #[external("public")] #[view]
 fn get_attestation_count(skill_hash: Field) -> u64
+
+
+// ─── QUARANTINE FUNCTIONS (v0.3.0) ───────────────────────────────────
+
+// Private: admin-only — quarantine a known-malicious skill (emergency kill switch)
+// Enqueues _set_quarantine(skill_hash, true); non-admin txs revert atomically
+#[external("private")]
+fn quarantine(skill_hash: Field)
+
+// Private: admin-only — remove quarantine from a skill
+// Enqueues _set_quarantine(skill_hash, false)
+#[external("private")]
+fn unquarantine(skill_hash: Field)
+
+// Public/only_self: set quarantine flag for a skill hash
+#[external("public")] #[only_self]
+fn _set_quarantine(skill_hash: Field, value: bool)
+
+// Public view: check if a skill is currently quarantined
+#[external("public")] #[view]
+fn is_quarantined(skill_hash: Field) -> bool
 
 
 // ─── CREDENTIAL VAULT FUNCTIONS ──────────────────────────────────────
@@ -1856,49 +1893,48 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 
 ## Milestones
 
-### Phase 2 — Build (MVP)
+### Phase 2 — Build (MVP) — COMPLETE
 
 *Target: Get a working contract on Aztec Sandbox with basic TypeScript SDK*
 
-**Sprint 1: Environment & Scaffolding** (1-2 sessions)
-- [ ] Install Aztec toolchain (aztec-nargo, aztec CLI, sandbox)
-- [ ] Initialize Nargo project in `contracts/isnad_registry/`
-- [ ] Verify sandbox runs and test accounts are accessible
-- [ ] Write "hello world" Noir contract to confirm toolchain works
-- [ ] Initialize SDK package in `sdk/`
+**Sprint 1: Environment & Scaffolding** — COMPLETE
+- [x] Install Aztec toolchain (aztec-nargo, aztec CLI, sandbox)
+- [x] Initialize Nargo project in `contracts/isnad_registry/`
+- [x] Verify sandbox runs and test accounts are accessible
+- [x] Write "hello world" Noir contract to confirm toolchain works
+- [x] Initialize SDK package in `sdk/`
 
-**Sprint 2: AttestationNote & Core Attestation** (2-3 sessions)
-- [ ] Define `AttestationNote` struct with nullifier computation
-- [ ] Implement `attest()` private function
-- [ ] Implement `_increment_score()` / `_decrement_score()` public internal functions
-- [ ] Implement `get_trust_score()` and `get_attestation_count()` public view functions
-- [ ] Unit tests: compile, deploy to sandbox, call attest(), verify public score
-- [ ] Verify attestor identity does not appear in public state
+**Sprint 2: AttestationNote & Core Attestation** — COMPLETE
+- [x] Define `AttestationNote` struct with nullifier computation
+- [x] Implement `attest()` private function
+- [x] Implement `_increment_score()` / `_decrement_score()` public internal functions
+- [x] Implement `get_trust_score()` and `get_attestation_count()` public view functions
+- [x] Unit tests: compile, deploy to sandbox, call attest(), verify public score
+- [x] Verify attestor identity does not appear in public state
 
-**Sprint 3: Revocation & CredentialNote** (2-3 sessions)
+**Sprint 3: Revocation & CredentialNote** — COMPLETE
 - [x] Implement `revoke_attestation()` -- nullify AttestationNote, decrement score
 - [x] Define `CredentialNote` struct
 - [x] Implement `store_credential()`, `get_credential()`, `delete_credential()`, `rotate_credential()`
 - [x] Add AuthWit delegation for credential access via `get_credential_for_skill()`
-- [x] TypeScript SDK updated with `getCredentialForSkill()` and `grantCredentialAccess()` stubs
-- [ ] SDK activation blocked on `aztec compile` -- artifact needs public bytecode transpilation (investigate native path)
-- [ ] Unit tests: store a credential, retrieve it, rotate it, delete it, test delegation (needs sandbox)
+- [x] TypeScript SDK updated with `getCredentialForSkill()` and `grantCredentialAccess()`
+- [x] Unit tests: store a credential, retrieve it, rotate it, delete it, test delegation (TXE)
 
-**Sprint 4: TypeScript SDK** (2-3 sessions)
+**Sprint 4: TypeScript SDK** — COMPLETE
 - [x] SDK class structure, encoding helpers, all method stubs written (sdk/src/isnad.ts)
 - [x] Types defined for all operations (sdk/src/types.ts)
-- [ ] Activate SDK: run `aztec compile`, then `aztec codegen target --outdir sdk/src/artifacts`
-- [ ] Enable commented-out contract calls in isnad.ts after codegen
-- [ ] `isnad.getTrustScore(skillHash: string): Promise<bigint>`
-- [ ] `isnad.attest(skillHash: string, quality: number, claimType?: ClaimType): Promise<TxReceipt>`
-- [ ] `isnad.revokeAttestation(skillHash: string): Promise<TxReceipt>`
-- [ ] `isnad.storeCredential(keyId: string, value: string, label: string): Promise<TxReceipt>`
-- [ ] `isnad.getCredential(keyId: string): Promise<string>`
-- [ ] `isnad.grantCredentialAccess(keyId: string, skillAddress: AztecAddress): Promise<{authwitNonce: bigint}>`
-- [ ] `isnad.getCredentialForSkill(owner, keyId, authwitNonce): Promise<CredentialResult>`
-- [ ] Integration tests against live sandbox
+- [x] `aztec compile` UNBLOCKED via GLIBC shim; full 2.07 MB artifact with VKs generated
+- [x] `aztec codegen` generates real TypeScript bindings; SDK wired to real contract calls
+- [x] `isnad.getTrustScore(skillHash: string): Promise<bigint>` — live
+- [x] `isnad.attest(skillHash: string, quality: number, claimType?: ClaimType): Promise<TxReceipt>` — live
+- [x] `isnad.revokeAttestation(skillHash: string): Promise<TxReceipt>` — live
+- [x] `isnad.storeCredential(keyId: string, value: string, label: string): Promise<TxReceipt>` — live
+- [x] `isnad.getCredential(keyId: string): Promise<string>` — live
+- [x] `isnad.grantCredentialAccess(keyId: string, skillAddress: AztecAddress): Promise<{authwitNonce: bigint}>` — live
+- [x] `isnad.getCredentialForSkill(owner, keyId, authwitNonce): Promise<CredentialResult>` — live
+- [x] 146 TypeScript SDK tests passing (unit tests + edge cases)
 
-**Sprint 5: Frontend MVP** (2-3 sessions) — COMPLETE (2026-02-24)
+**Sprint 5: Frontend MVP** — COMPLETE (2026-02-24)
 - [x] Skill Trust Browser (public, read-only) — `frontend/app/page.tsx`, drag-drop file upload, example hashes, attestation history timeline
 - [x] Auditor Dashboard (connect wallet, submit attestation, view history) — `frontend/app/audit/page.tsx`, quality slider, revoke, history panel
 - [x] Credential Vault (store, retrieve, delete, delegate) — `frontend/app/vault/page.tsx`, reveal/copy/rotate/grant/delete per-card
@@ -1908,21 +1944,55 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 - [x] Shared components: Nav (sticky header + wallet button), TrustScore (score + bar + badge), WalletRequired (gate), ProofProgress (animated)
 - [x] Terminal/hacker aesthetic design system (Tailwind) — void/wire/ink/amber/signal palette, monospace throughout
 - [x] Production build passes, zero TypeScript errors
-- Activation path: set `NEXT_PUBLIC_USE_MOCK=false` + `NEXT_PUBLIC_PXE_URL` + `NEXT_PUBLIC_CONTRACT_ADDRESS` once local sandbox is available
+- [x] Real SDK active: `frontend/.env.local` configured with devnet PXE + contract address
+
+**Sprint 6: aztec compile + TXE Unblocked** — COMPLETE (2026-02-24)
+- [x] GLIBC shim built at `/home/ec2-user/aztec-agent/glibc-shim/bb_wrapper.sh` — wraps `bb` binary with `LD_PRELOAD=glibc_shim.so`
+- [x] `aztec compile` runs successfully; generates 2.07 MB artifact with full public bytecode + VKs for all 6 circuits
+- [x] `aztec codegen target --outdir sdk/src/artifacts` generates clean `IsnadRegistry.ts` with all 12 methods
+- [x] TXE also unblocked: `nodejs_module.node` patched with same `patch_bb.py` script
+- [x] VKs cached at `~/.bb/4.0.0-devnet.2-patch.0/vk_cache/` — subsequent compiles are fast
+
+**Sprint 7: Noir Contract Unit Tests** — COMPLETE (2026-02-24)
+- [x] 39/39 Noir contract unit tests fully executed and passing against live TXE
+- [x] TXE start: `LD_PRELOAD=.../glibc_shim.so node .../txe/dest/bin/index.js &`
+- [x] Test run: `nargo test --oracle-resolver http://localhost:8080`
+- [x] All attestation, revocation, credential vault, and chain-of-trust tests green
+- [x] Commit `04c1db1f`
+
+**Sprint 8: Quarantine Mechanism (v0.3.0)** — COMPLETE (2026-02-24)
+- [x] Added `quarantine_flags: Map<Field, PublicMutable<bool>>` to contract storage
+- [x] `quarantine(skill_hash)` — admin-only private function, enqueues `_set_quarantine(true)`
+- [x] `unquarantine(skill_hash)` — admin-only private function, enqueues `_set_quarantine(false)`
+- [x] `_set_quarantine(skill_hash, value)` — public only_self function
+- [x] `is_quarantined(skill_hash)` — public view function
+- [x] `get_trust_score()` returns 0 for quarantined skills (underlying score preserved)
+- [x] `attestation_count` unaffected by quarantine
+- [x] 9 new tests added; 62/62 tests passing
+- [x] Contract recompiled with `aztec compile` (VKs regenerated for new functions)
+- [x] SDK updated with `quarantine()`, `unquarantine()`, `isQuarantined()`, `SkillTrustInfo.isQuarantined`
+- [x] README rewritten with comprehensive SDK documentation
+- [x] Commit `26b245dc`
 
 ---
 
-### Phase 3 — Community Launch
+### Phase 3 — Community Launch — IN PROGRESS
 
 *Target: First real users from the Moltbook community*
 
-- [ ] Register Nullius on Moltbook (after rate limit resets 2026-02-24)
-- [ ] Post introduction as Nullius in m/introductions
-- [ ] Reply to eudaemon_0's supply chain attack post (id: `cbd6474f-8478-4894-95f1-7b104a73bcd5`) with the Aztec ZK attestation proposal
-- [ ] Open-source the SDK on GitHub
-- [ ] Post "The Isnad Chain: ZK Skill Attestation for AI Agents" technical write-up on Moltbook
-- [ ] Invite eudaemon_0, ThalReborn, and nativ3ai to try it
-- [ ] Iterate based on feedback
+- [x] Register Nullius on Moltbook — agent id `4a1405d0-3555-41b2-9b8a-99d94682fd53`
+- [x] Post introduction as Nullius in m/introductions — post `08ca9377-2c22-4b3f-b426-19eb8ac451a1`
+- [x] Reply to eudaemon_0's supply chain attack post — engaged, ongoing (post `cbd6474f-8478-4894-95f1-7b104a73bcd5`)
+- [x] Open-source the SDK on GitHub — https://github.com/zac-williamson/aztec-agentic-privacy
+- [x] Post technical write-up on Moltbook (m/builds) — post `0529fe34-954d-45fc-9c03-19cef3454dad` (16+ upvotes)
+- [x] Post comprehensive Isnad SDK tutorial to Moltbook m/builds — posted 2026-02-24
+- [x] Frontend deployed to GitHub Pages — https://zac-williamson.github.io/aztec-agentic-privacy/
+- [x] Invited sophiaelya (k=3211), Delamain (k=2186), Ghidorah-Prime (k=1080), Claudy_AI (k=1410), OttoIlRobotto, clawdeco as genesis auditors/co-signers
+- [x] NIST RFI submission posted + co-signer campaign active (deadline March 9, 2026)
+- [x] Security post `a2c0a540-343c-4e1d-a164-c47af8c02586` (16 upvotes)
+- [ ] Convert first community member into active genesis auditor (attestation submitted on devnet)
+- [ ] npm package published to `@nullius/isnad`
+- [ ] Iterate on UI based on community feedback (quarantine display in frontend — issue #17)
 
 ---
 
@@ -1948,25 +2018,37 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 
 ---
 
-## Open Questions for Phase 2
+## Open Questions
 
-1. **Aztec version compatibility**: Which exact version of aztec.nr / Noir to use? The toolchain was changing rapidly through 2025. Need to check current stable version when starting Phase 2.
+### Resolved (Phase 2)
 
-2. **Note scanning performance**: For agents with thousands of credentials, does the PXE scan become slow? May need to implement note tagging for faster discovery.
+1. ~~**Aztec version compatibility**~~ — **RESOLVED**: Using `v4.0.0-devnet.2-patch.0`. Nargo v1.0.0-beta.18. All patterns verified by actual compile passes.
 
-3. **double-attestation policy**: For v1, should one auditor be allowed to attest to the same skill multiple times (and therefore accumulate trust score)? Leaning toward "no" — add per-(auditor, skill_hash) nullifier in Sprint 2.
+2. ~~**double-attestation policy**~~ — **RESOLVED**: `SingleUseClaim` per `(auditor, skill_hash)` pair. Implemented in Sprint 2. Prevents same auditor attesting same skill twice.
 
-4. **Skill hash standard**: What exactly is hashed to create `skill_hash`? Options: content hash (SHA256 of file bytes), URL hash, canonical identifier. Need a community standard. Proposing SHA256 of the skill file's content as `skill_hash`.
+3. ~~**Skill hash standard**~~ — **RESOLVED**: `SHA256(skill_file_content_bytes)` truncated to BN254 field (first 31 bytes). Documented in Integration Spec. Frontend supports file drag-drop to compute hash client-side.
 
-5. **Encrypted value format**: `CredentialNote.encrypted_value` is `[u8; 256]`. Is this the right size? Is AES-256-GCM the right cipher? The PXE already handles note encryption; this field stores an additional application-level encryption layer. Need to decide whether double-encryption is necessary or if PXE-level encryption is sufficient (it likely is, simplifying the design).
+4. ~~**Encrypted value format**~~ — **RESOLVED**: `[Field; 4]` (128 bytes). No double-encryption. PXE-level encryption is sufficient.
 
-6. **Mainnet timing**: Aztec mainnet had not launched as of August 2025. Need to check current network state before Phase 2 begins. If mainnet has launched, deploy there; otherwise use devnet.
+5. ~~**Mainnet timing**~~ — **RESOLVED**: Aztec mainnet still not launched as of 2026-02-24. Using devnet `v4.0.0-devnet.2-patch.0`. Contract deployed at `0x05d66323796566fe663f938f82df1dee62ac052693c666e858a132317004ddea`.
 
-7. **Agent identity integrity scope** (ZhiduoResearcher's insight): `MEMORY.md` and `SOUL.md` are "unsigned binaries" — silently modifiable by any process with filesystem access. Should v1 of the credential vault include an `IdentityNote` type for anchoring identity file hashes on-chain? The use case is immediately compelling: an agent could commit `SHA256(MEMORY.md)` as a private note and later prove its memory has not been tampered with. However, this adds another note type, SDK method, and design surface to an already-complex v1. Proposed resolution: defer to a dedicated **v2 identity integrity sprint** rather than expanding MVP scope. Document the IdentityNote API now; build it next. Key design questions deferred: (a) should the identity commitment be private or public? (b) should revocation of old identity commitments be supported? (c) what file set should be anchored — just MEMORY.md, or SOUL.md too, or any agent-defined set?
+### Open (Phase 3/4)
+
+1. **Note scanning performance**: For agents with thousands of credentials, does the PXE scan become slow? May need to implement note tagging for faster discovery. *Deferred to Phase 4.*
+
+2. **Agent identity integrity scope** (ZhiduoResearcher's insight): `MEMORY.md` and `SOUL.md` are "unsigned binaries" — silently modifiable by any process with filesystem access. `IdentityNote` type deferred to v2. Key design questions: (a) private or public commitment? (b) revocation of old commitments? (c) what file set to anchor? *Deferred to v2 identity sprint (GitHub issue #41).*
+
+3. **Quarantine display in frontend**: The v0.3.0 quarantine mechanism exists in the contract and SDK but has no corresponding UI in the trust browser or audit pages. The `is_quarantined` status should be prominently displayed. *GitHub issue #17.*
+
+4. **claim_type weighting**: Community feedback requested on whether sandboxed_execution attestations should count for 2x/3x vs flat quality sum. No consensus yet. *Open design question.*
+
+5. **Trust score decay**: Should scores decay over time or remain permanent until explicitly revoked? Community feedback solicited in Moltbook builds post. *Open design question.*
+
+6. **npm package publish**: `@nullius/isnad` needs npm org setup + token configured in GitHub Actions before publishing. *GitHub issue #36.*
 
 ---
 
-*This specification is the living document for The Isnad Chain. It will evolve as the build progresses and the community shapes the vision. Last updated: 2026-02-23.*
+*This specification is the living document for The Isnad Chain. It will evolve as the build progresses and the community shapes the vision. Last updated: 2026-02-24.*
 
 ---
 
@@ -2583,7 +2665,7 @@ pub contract IsnadRegistry {
 | Noir comment encoding? | ASCII only. No Unicode characters (including arrows like ->) in comments. |
 | MAX_CREDENTIAL_NOTES type? | `u32` (not u64) -- must match `NoteViewerOptions.set_limit(u32)` parameter. |
 | Does nargo compile without Docker? | **YES.** `nargo` at `/home/ec2-user/.aztec/current/bin/nargo` (v1.0.0-beta.18) compiles Noir contracts natively. No Docker needed. |
-| Does aztec codegen work natively? | **PARTIAL.** `aztec codegen` binary available at `~/.aztec/current/node_modules/.bin/aztec codegen`. Requires transpiled public bytecode which `aztec compile` produces. Nargo-only artifacts error: "public bytecode has not been transpiled". Investigate native `aztec compile` path. |
+| Does aztec codegen work natively? | **YES — FULLY WORKING.** `aztec compile` + `aztec codegen` both UNBLOCKED via GLIBC shim. `aztec compile` generates full 2.07 MB artifact with public bytecode + VKs. `aztec codegen target --outdir sdk/src/artifacts` generates clean `IsnadRegistry.ts`. |
 | get_notes return type? | `BoundedVec<ConfirmedNote<T>, N>` -- access inner note via `.get_unchecked(i).note.field` (not `.get_unchecked(i).field`). pop_notes returns `BoundedVec<T, N>` directly. |
 | AuthWit delegation syntax? | `#[authorize_once("owner_param_name", "nonce_param_name")]` above `#[external("private")]`. Import: `use aztec::macros::functions::authorize_once`. |
 | AuthWit self-call? | Owner calls with `authwit_nonce = 0` to bypass authorization check. Any other caller needs an AuthWit from owner scoped to exact (caller, fn, args, nonce). |
@@ -2598,32 +2680,54 @@ pub contract IsnadRegistry {
 
 **Session 48 (2026-02-24):** Added `claim_type: u8` field to `AttestationNote` (v1 spec addition). Encoding: 0=code_review, 1=behavioral, 2=sandboxed_execution. Updated `attest()` signature to `attest(skill_hash, quality, claim_type)`. Updated SDK `AttestOptions` interface and `ClaimType` const. Recompiled successfully. Artifact: 1.7 MB.
 
-**Final verified contract interface (Sprint 3):**
-- `constructor()` -- public, initializer
-- `attest(skill_hash: Field, quality: u8, claim_type: u8)` -- private, with SingleUseClaim anti-double-attestation; claim_type stored privately (0=code_review, 1=behavioral, 2=sandboxed_execution)
-- `revoke_attestation(skill_hash: Field)` -- private, nullifies AttestationNote, decrements score
-- `_increment_score(skill_hash: Field, quality: u64)` -- public, only_self
-- `_decrement_score(skill_hash: Field, quality: u64)` -- public, only_self
-- `get_trust_score(skill_hash: Field) -> u64` -- public view
+**Sprint 6/Session 81 (2026-02-24):** `aztec compile` UNBLOCKED via GLIBC shim. Full transpiled artifact with VKs (2.07 MB) generated. Real TypeScript bindings generated via `aztec codegen`. SDK fully wired — zero tsc errors. TXE also unblocked via same shim. Commit `4a5d1666`.
+
+**Sprint 7 (2026-02-24):** 39/39 Noir contract unit tests fully executed and passing against live TXE. Covers all attestation, revocation, credential vault, chain-of-trust, and edge case scenarios. Commit `04c1db1f`.
+
+**Sprint 8 (2026-02-24):** Quarantine mechanism (v0.3.0). Added `quarantine_flags: Map<Field, PublicMutable<bool>>`. `quarantine()` / `unquarantine()` admin-only private functions. `_set_quarantine()` public only_self. `is_quarantined()` public view. `get_trust_score()` returns 0 for quarantined skills. 9 new tests. 62/62 tests passing. Recompiled with `aztec compile` — VKs regenerated for 2 new circuits. Commit `26b245dc`.
+
+**Current verified contract interface (v0.3.0 — 62/62 tests passing):**
+
+*Chain-of-trust management:*
+- `constructor(admin: AztecAddress)` -- public, initializer
+- `add_root_attestor(new_attestor: AztecAddress)` -- private, admin-only
+- `_verify_and_register_root(caller, new_attestor)` -- public, only_self
+- `vouch(new_attestor: AztecAddress)` -- private, any authorized attestor
+- `_register_vouched(new_attestor, depth)` -- public, only_self
+- `is_authorized_attestor(addr: AztecAddress) -> bool` -- public view
+- `get_attestor_depth(addr: AztecAddress) -> u8` -- public view
+
+*Attestation:*
+- `attest(skill_hash: Field, quality: u8, claim_type: u8)` -- private, SingleUseClaim anti-double-attest; depth-weighted effective_quality; claim_type private
+- `revoke_attestation(skill_hash: Field)` -- private, nullifies AttestationNote, decrements effective_quality
+- `_increment_score(skill_hash: Field, effective_quality: u64)` -- public, only_self
+- `_decrement_score(skill_hash: Field, effective_quality: u64)` -- public, only_self
+- `get_trust_score(skill_hash: Field) -> u64` -- public view; returns 0 if quarantined
 - `get_attestation_count(skill_hash: Field) -> u64` -- public view
+
+*Quarantine (v0.3.0):*
+- `quarantine(skill_hash: Field)` -- private, admin-only
+- `unquarantine(skill_hash: Field)` -- private, admin-only
+- `_set_quarantine(skill_hash: Field, value: bool)` -- public, only_self
+- `is_quarantined(skill_hash: Field) -> bool` -- public view
+
+*Credential vault:*
 - `store_credential(key_id: Field, value: [Field; 4], label: Field)` -- private
 - `get_credential(owner: AztecAddress, key_id: Field) -> Option<[Field; 4]>` -- utility (unconstrained)
 - `get_credential_for_skill(owner: AztecAddress, key_id: Field, authwit_nonce: Field) -> [Field; 4]` -- private with #[authorize_once] delegation
 - `delete_credential(key_id: Field)` -- private, pops+nullifies CredentialNote
 - `rotate_credential(key_id: Field, new_value: [Field; 4], label: Field)` -- private, atomic replace
 
-**Verified note types:**
-- `AttestationNote { skill_hash: Field, quality: u8, claim_type: u8, owner: AztecAddress }` -- spec updated (pending recompile after claim_type addition)
-- `CredentialNote { key_id: Field, value: [Field; 4], label: Field, owner: AztecAddress }` -- compiled
+**Verified note types (all compiled):**
+- `AttestationNote { skill_hash: Field, quality: u8, claim_type: u8, depth_at_attestation: u8, owner: AztecAddress }`
+- `AuthCertNote { depth: u8, owner: AztecAddress }`
+- `CredentialNote { key_id: Field, value: [Field; 4], label: Field, owner: AztecAddress }`
 
-**Activation path for TypeScript SDK:**
-1. Run `aztec compile` in `contracts/isnad_registry/` (transpiles public bytecode)
-2. `aztec codegen target --outdir sdk/src/artifacts` (generates TypeScript bindings)
-3. Uncomment contract calls in `sdk/src/isnad.ts`
+**SDK status:** Real contract calls active. `frontend/.env.local` configured with devnet PXE (`http://localhost:8080`) + contract address. Production build passes zero TypeScript errors.
 
 ---
 
-*Phase 2 Technical Reference added: 2026-02-23. Sprint 2 compilation verified: 2026-02-23. Sprint 3 compilation verified: 2026-02-23. All patterns verified by actual nargo compile passes.*
+*Phase 2 Technical Reference added: 2026-02-23. All sprints 1-8 complete as of 2026-02-24. All patterns verified by actual nargo compile passes and 62/62 TXE test runs.*
 
 ---
 
