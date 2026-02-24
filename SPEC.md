@@ -2730,4 +2730,4 @@ When an agent registers a new skill at clawde.co, the flow would be:
 
 ---
 
-*Integration spec drafted: 2026-02-23. Status: proposed, pending clawdeco response to comment c4a5fa11-1255-43ea-b2e7-0569284ba2ed.*
+*Integration spec drafted: 2026-02-23. Promoted to standalone open standard: 2026-02-24. Full self-contained reference: `INTEGRATION.md` in project root. The spec no longer depends on clawdeco response — it is an open standard any directory can adopt independently. Design questions from this section are resolved in INTEGRATION.md §6.*
