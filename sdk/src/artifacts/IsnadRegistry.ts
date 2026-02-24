@@ -90,7 +90,7 @@ export class IsnadRegistryContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'quarantine_flags' | 'attestations' | 'attest_claims' | 'credentials'> {
       return {
         admin: {
       slot: new Fr(1n),
@@ -110,16 +110,19 @@ trust_scores: {
 attestation_counts: {
       slot: new Fr(6n),
     },
-attestations: {
+quarantine_flags: {
       slot: new Fr(7n),
     },
-attest_claims: {
+attestations: {
       slot: new Fr(8n),
     },
-credentials: {
+attest_claims: {
       slot: new Fr(9n),
+    },
+credentials: {
+      slot: new Fr(10n),
     }
-      } as ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'>;
+      } as ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'quarantine_flags' | 'attestations' | 'attest_claims' | 'credentials'>;
     }
     
 
@@ -156,11 +159,17 @@ credentials: {
     /** is_authorized_attestor(addr: struct) */
     is_authorized_attestor: ((addr: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
+    /** is_quarantined(skill_hash: field) */
+    is_quarantined: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** process_message(message_ciphertext: struct, message_context: struct) */
     process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** quarantine(skill_hash: field) */
+    quarantine: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** revoke_attestation(skill_hash: field) */
     revoke_attestation: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -173,6 +182,9 @@ credentials: {
 
     /** sync_state() */
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** unquarantine(skill_hash: field) */
+    unquarantine: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** vouch(new_attestor: struct) */
     vouch: ((new_attestor: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

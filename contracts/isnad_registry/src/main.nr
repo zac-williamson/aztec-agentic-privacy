@@ -48,9 +48,25 @@ use aztec::macros::aztec;
 ///   - attestor_depth:     how many vouch steps from a root
 ///   - trust_scores:       aggregate weighted quality score per skill hash
 ///   - attestation_counts: how many unique authorized auditors have attested a skill
+///   - quarantine_flags:   emergency override -- quarantined skills return score 0
+///
+/// === Quarantine Model ===
+///
+/// quarantine(skill_hash) is an EMERGENCY KILL SWITCH for known-malicious skills.
+/// When quarantined, get_trust_score() returns 0 regardless of accumulated attestations.
+/// Quarantined skills are immediately rejected by agents checking trust scores.
+///
+/// This is DISTINCT from revoke_attestation() (individual retraction). Quarantine:
+///   - Is admin-only (not per-auditor)
+///   - Overrides the score rather than removing individual contributions
+///   - Preserves the underlying score -- unquarantine() restores it fully
+///   - Takes effect instantly for all consumers of get_trust_score()
+///
+/// The attestation_count remains visible even when quarantined, so observers can see
+/// that attestations exist while still treating the skill as dangerous.
 ///
 /// Author: Nullius
-/// Version: 0.2.0 (Phase 2 -- Chain-of-Trust)
+/// Version: 0.3.0 (Phase 2 -- Chain-of-Trust + Quarantine)
 /// Network: Aztec devnet v4.0.0-devnet.2-patch.0
 #[aztec]
 pub contract IsnadRegistry {
@@ -108,6 +124,11 @@ pub contract IsnadRegistry {
 
         /// Public: number of unique authorized auditors who have attested a given skill.
         attestation_counts: Map<Field, PublicMutable<u64, Context>, Context>,
+
+        /// Public: emergency quarantine flags per skill hash.
+        /// A quarantined skill returns get_trust_score() = 0 regardless of accumulated attestations.
+        /// Writable only by admin. The underlying trust score is preserved for restoration.
+        quarantine_flags: Map<Field, PublicMutable<bool, Context>, Context>,
 
         /// Private: per-auditor attestation notes.
         attestations: Map<AztecAddress, Owned<PrivateSet<AttestationNote, Context>, Context>, Context>,
@@ -346,17 +367,80 @@ pub contract IsnadRegistry {
     }
 
     /// Read the aggregate weighted trust score for a skill. No auth needed.
+    ///
+    /// Returns 0 for quarantined skills regardless of accumulated attestations.
+    /// To distinguish quarantined (score forcibly zero) from unattested (score naturally zero),
+    /// call is_quarantined() separately.
     #[external("public")]
     #[view]
     fn get_trust_score(skill_hash: Field) -> u64 {
-        self.storage.trust_scores.at(skill_hash).read()
+        if self.storage.quarantine_flags.at(skill_hash).read() {
+            0
+        } else {
+            self.storage.trust_scores.at(skill_hash).read()
+        }
     }
 
     /// Read the number of unique authorized auditors who have attested a skill.
+    /// NOTE: this count is NOT overridden by quarantine -- it reflects true attestation history.
     #[external("public")]
     #[view]
     fn get_attestation_count(skill_hash: Field) -> u64 {
         self.storage.attestation_counts.at(skill_hash).read()
+    }
+
+    // --- QUARANTINE FUNCTIONS ---
+
+    /// Quarantine a skill (admin only -- emergency kill switch).
+    ///
+    /// A quarantined skill returns get_trust_score() = 0 regardless of accumulated
+    /// attestations. Use when a skill is KNOWN malicious and waiting for individual
+    /// auditors to revoke would leave other agents at risk.
+    ///
+    /// The underlying trust score is preserved -- unquarantine() restores it fully.
+    ///
+    /// @param skill_hash  SHA256 of the skill file content
+    ///
+    /// Reverts if: caller is not admin.
+    #[external("private")]
+    fn quarantine(skill_hash: Field) {
+        let caller = self.context.maybe_msg_sender().unwrap();
+        self.enqueue_self._set_quarantine(caller, skill_hash, true);
+    }
+
+    /// Remove quarantine from a skill (admin only).
+    ///
+    /// After unquarantine, get_trust_score() returns the actual accumulated score again.
+    ///
+    /// @param skill_hash  SHA256 of the skill file content
+    ///
+    /// Reverts if: caller is not admin.
+    #[external("private")]
+    fn unquarantine(skill_hash: Field) {
+        let caller = self.context.maybe_msg_sender().unwrap();
+        self.enqueue_self._set_quarantine(caller, skill_hash, false);
+    }
+
+    /// Internal: set or clear the quarantine flag for a skill.
+    /// Verifies admin authorization and writes to quarantine_flags.
+    /// Called exclusively by quarantine() and unquarantine() via enqueue_self.
+    #[external("public")]
+    #[only_self]
+    fn _set_quarantine(caller: AztecAddress, skill_hash: Field, flagged: bool) {
+        let admin = self.storage.admin.read();
+        assert(caller == admin, "only the admin can quarantine or unquarantine skills");
+        self.storage.quarantine_flags.at(skill_hash).write(flagged);
+    }
+
+    /// Check whether a skill is under quarantine. No auth needed.
+    ///
+    /// Use this alongside get_trust_score() to distinguish:
+    ///   - score=0 AND is_quarantined=false: skill is unattested (unknown)
+    ///   - score=0 AND is_quarantined=true:  skill is KNOWN MALICIOUS (hard reject)
+    #[external("public")]
+    #[view]
+    fn is_quarantined(skill_hash: Field) -> bool {
+        self.storage.quarantine_flags.at(skill_hash).read()
     }
 
     // --- CREDENTIAL VAULT FUNCTIONS ---

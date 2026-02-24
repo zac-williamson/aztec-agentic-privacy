@@ -63,23 +63,30 @@ export class IsnadSDK {
   }
 
   /**
-   * Read the trust score and attestation count for a skill.
+   * Read the trust score, attestation count, and quarantine status for a skill.
    * No authentication needed — this reads public state.
+   *
+   * The returned trustScore is 0 for quarantined skills regardless of attestations.
+   * Use isQuarantined to distinguish between:
+   *   - Unattested (isQuarantined=false, attestationCount=0): unknown skill
+   *   - Quarantined (isQuarantined=true): KNOWN MALICIOUS — hard reject
    *
    * @param skillHash  SHA256 of the skill file, as a hex string or Fr
    */
   async getTrustScore(skillHash: string | Fr): Promise<SkillTrustInfo> {
     const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
 
-    const [trustScore, attestationCount] = await Promise.all([
+    const [trustScore, attestationCount, quarantined] = await Promise.all([
       this.contract.methods.get_trust_score(hash).simulate({ from: this.from }),
       this.contract.methods.get_attestation_count(hash).simulate({ from: this.from }),
+      this.contract.methods.is_quarantined(hash).simulate({ from: this.from }),
     ]);
 
     return {
       skillHash: hash.toString(),
       trustScore: BigInt(trustScore as bigint | number),
       attestationCount: BigInt(attestationCount as bigint | number),
+      isQuarantined: Boolean(quarantined),
     };
   }
 
@@ -287,6 +294,61 @@ export class IsnadSDK {
       .revoke_attestation(hash)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
+  }
+
+  // ─── QUARANTINE MANAGEMENT ─────────────────────────────────────────────────
+
+  /**
+   * Quarantine a skill — emergency kill switch (admin only).
+   *
+   * A quarantined skill returns getTrustScore().trustScore = 0 regardless of
+   * accumulated attestations. Use when a skill is KNOWN malicious.
+   *
+   * The underlying score is preserved and can be restored with unquarantine().
+   * The attestation count remains visible so observers can see the history.
+   *
+   * @param skillHash  SHA256 of the skill file, as a hex string or Fr
+   * @throws If caller is not the contract admin
+   */
+  async quarantine(skillHash: string | Fr): Promise<{ txHash: string }> {
+    const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
+    const receipt = await this.contract.methods
+      .quarantine(hash)
+      .send({ from: this.from });
+    return { txHash: receipt.txHash.toString() };
+  }
+
+  /**
+   * Remove quarantine from a skill (admin only).
+   *
+   * After unquarantine, getTrustScore() returns the actual accumulated score again.
+   *
+   * @param skillHash  SHA256 of the skill file, as a hex string or Fr
+   * @throws If caller is not the contract admin
+   */
+  async unquarantine(skillHash: string | Fr): Promise<{ txHash: string }> {
+    const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
+    const receipt = await this.contract.methods
+      .unquarantine(hash)
+      .send({ from: this.from });
+    return { txHash: receipt.txHash.toString() };
+  }
+
+  /**
+   * Check whether a skill is under quarantine. No auth needed.
+   *
+   * Use this to distinguish:
+   *   - isQuarantined=false AND attestationCount=0: skill is unattested (unknown)
+   *   - isQuarantined=true:                        skill is KNOWN MALICIOUS (hard reject)
+   *
+   * @param skillHash  SHA256 of the skill file, as a hex string or Fr
+   */
+  async isQuarantined(skillHash: string | Fr): Promise<boolean> {
+    const hash = typeof skillHash === "string" ? Fr.fromHexString(skillHash) : skillHash;
+    const result = await this.contract.methods
+      .is_quarantined(hash)
+      .simulate({ from: this.from });
+    return Boolean(result);
   }
 
   /**

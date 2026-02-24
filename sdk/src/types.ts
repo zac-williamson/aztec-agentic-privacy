@@ -7,10 +7,19 @@ import type { Fr } from "@aztec/aztec.js/fields";
 export interface SkillTrustInfo {
   /** SHA256 of the skill file content, as a hex string */
   skillHash: string;
-  /** Cumulative quality score (sum of all auditor quality scores) */
+  /**
+   * Cumulative quality score (sum of all auditor quality scores).
+   * Returns 0 for quarantined skills regardless of accumulated attestations.
+   */
   trustScore: bigint;
   /** Number of unique auditors who have attested this skill */
   attestationCount: bigint;
+  /**
+   * Whether this skill is under admin quarantine (KNOWN MALICIOUS).
+   * When true, trustScore is forced to 0 by the contract.
+   * Distinguish from an unattested skill (isQuarantined=false, attestationCount=0).
+   */
+  isQuarantined: boolean;
 }
 
 /**

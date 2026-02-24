@@ -874,3 +874,148 @@ unconstrained fn test_mixed_depth_attestors_accumulate() {
     assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 900u64);
     assert_eq(env.view_public(IsnadRegistry::at(addr).get_attestation_count(SKILL_A)), 3u64);
 }
+
+// === QUARANTINE ==============================================================
+//
+// quarantine() is the admin-only emergency kill switch for known-malicious skills.
+// A quarantined skill returns get_trust_score() = 0 regardless of accumulated
+// attestations. The underlying score is PRESERVED -- unquarantine() restores it.
+// attestation_count is NOT overridden: observers can still see attestation history.
+
+/// A fresh skill is not quarantined by default.
+#[test]
+unconstrained fn test_is_quarantined_false_for_new_skill() {
+    let (env, addr, _) = setup();
+    let result = env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A));
+    assert_eq(result, false);
+}
+
+/// Admin can quarantine a skill -- get_trust_score() returns 0.
+#[test]
+unconstrained fn test_admin_can_quarantine_skill() {
+    let (mut env, addr, admin, auditor) = setup_with_root_auditor();
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_A, 80, CLAIM_CODE_REVIEW));
+    // 80*4=320
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 320u64);
+
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A)), true);
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+}
+
+/// Quarantine overrides score but preserves attestation_count.
+/// Observers can see attestations exist while still treating skill as dangerous.
+#[test]
+unconstrained fn test_quarantine_preserves_attestation_count() {
+    let (mut env, addr, admin, auditor) = setup_with_root_auditor();
+
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_A, 80, CLAIM_CODE_REVIEW));
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+
+    // Score is 0 due to quarantine override
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+    // Attestation count is unaffected -- still 1
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_attestation_count(SKILL_A)), 1u64);
+}
+
+/// Admin can unquarantine -- get_trust_score() returns the original accumulated score.
+#[test]
+unconstrained fn test_admin_can_unquarantine_skill() {
+    let (mut env, addr, admin, auditor) = setup_with_root_auditor();
+
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_A, 80, CLAIM_CODE_REVIEW));
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+
+    env.call_private(admin, IsnadRegistry::at(addr).unquarantine(SKILL_A));
+
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A)), false);
+    // Original score 80*4=320 is restored
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 320u64);
+}
+
+/// Non-admin cannot quarantine a skill -- must revert.
+#[test(should_fail_with = "only the admin can quarantine or unquarantine skills")]
+unconstrained fn test_non_admin_cannot_quarantine() {
+    let (mut env, addr, _admin) = setup();
+    let rando = env.create_light_account();
+    env.call_private(rando, IsnadRegistry::at(addr).quarantine(SKILL_A));
+}
+
+/// Non-admin cannot unquarantine a skill -- must revert.
+#[test(should_fail_with = "only the admin can quarantine or unquarantine skills")]
+unconstrained fn test_non_admin_cannot_unquarantine() {
+    let (mut env, addr, admin) = setup();
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+    let rando = env.create_light_account();
+    env.call_private(rando, IsnadRegistry::at(addr).unquarantine(SKILL_A));
+}
+
+/// Quarantining SKILL_A does not affect SKILL_B's score.
+/// Quarantine flags are fully independent per skill hash.
+#[test]
+unconstrained fn test_quarantine_is_per_skill() {
+    let (mut env, addr, admin, auditor) = setup_with_root_auditor();
+
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_A, 80, CLAIM_CODE_REVIEW));
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_B, 90, CLAIM_CODE_REVIEW));
+
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+
+    // SKILL_A quarantined: score = 0
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A)), true);
+    // SKILL_B unaffected: 90*4=360
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_B)), 360u64);
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_B)), false);
+}
+
+/// Quarantine overrides even a maximum-trust skill (3 root auditors, all quality=100).
+#[test]
+unconstrained fn test_quarantine_overrides_high_trust_score() {
+    let (mut env, addr, admin) = setup();
+    let alice = env.create_light_account();
+    let bob = env.create_light_account();
+    let carol = env.create_light_account();
+    env.call_private(admin, IsnadRegistry::at(addr).add_root_attestor(alice));
+    env.call_private(admin, IsnadRegistry::at(addr).add_root_attestor(bob));
+    env.call_private(admin, IsnadRegistry::at(addr).add_root_attestor(carol));
+
+    // High combined score: 100*4 + 100*4 + 100*4 = 1200
+    env.call_private(alice, IsnadRegistry::at(addr).attest(SKILL_A, 100, CLAIM_CODE_REVIEW));
+    env.call_private(bob, IsnadRegistry::at(addr).attest(SKILL_A, 100, CLAIM_BEHAVIORAL));
+    env.call_private(carol, IsnadRegistry::at(addr).attest(SKILL_A, 100, CLAIM_SANDBOXED));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 1200u64);
+
+    // Admin quarantines: even a 1200-score skill drops to 0
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+    // But attestation count is preserved
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_attestation_count(SKILL_A)), 3u64);
+}
+
+/// Full quarantine lifecycle: attest -> quarantine (0) -> unquarantine (restored) -> revoke (0).
+/// Demonstrates the distinction between quarantine (admin override) and revocation (per-auditor).
+#[test]
+unconstrained fn test_quarantine_full_lifecycle() {
+    let (mut env, addr, admin, auditor) = setup_with_root_auditor();
+
+    // Auditor attests: 85*4=340
+    env.call_private(auditor, IsnadRegistry::at(addr).attest(SKILL_A, 85, CLAIM_CODE_REVIEW));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 340u64);
+
+    // Admin quarantines (KNOWN MALICIOUS): score becomes 0
+    env.call_private(admin, IsnadRegistry::at(addr).quarantine(SKILL_A));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A)), true);
+
+    // Admin unquarantines (e.g. false positive): score returns to 340
+    env.call_private(admin, IsnadRegistry::at(addr).unquarantine(SKILL_A));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 340u64);
+    assert_eq(env.view_public(IsnadRegistry::at(addr).is_quarantined(SKILL_A)), false);
+
+    // Auditor revokes their attestation: score drops to 0 via individual retraction
+    env.call_private(auditor, IsnadRegistry::at(addr).revoke_attestation(SKILL_A));
+    assert_eq(env.view_public(IsnadRegistry::at(addr).get_trust_score(SKILL_A)), 0u64);
+}
