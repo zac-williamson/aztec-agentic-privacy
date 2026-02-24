@@ -1220,6 +1220,261 @@ describe("End-to-end scenarios", () => {
   });
 });
 
+// ─── SINGLE-USE CLAIM PERMANENCE ─────────────────────────────────────────────
+//
+// SingleUseClaim emits a nullifier that is PERMANENT — it cannot be un-spent.
+// This has one important implication: after an auditor revokes their attestation,
+// they CANNOT re-attest the same skill. This is by design:
+//   - Revocation is a high-stakes action (signals compromise)
+//   - Re-attestation after revocation would bypass the "you only get one shot"
+//     invariant and allow gaming by revoking + re-attesting for a fresh score bump
+//   - If an auditor legitimately wants to re-attest, they would need a new identity
+// This behavior should be explicitly understood by anyone building on the protocol.
+
+describe("SingleUseClaim permanence — revoke-then-re-attest is impossible", () => {
+  let registry: MockIsnadRegistry;
+
+  beforeEach(() => { registry = new MockIsnadRegistry(); });
+
+  it("revoked attestation cannot be re-attested by the same auditor", () => {
+    const h = makeSkillHash("once-and-done-skill");
+
+    // Alice attests
+    registry.attest(ALICE, h, 85, ClaimType.CODE_REVIEW);
+    expect(registry.getTrustScore(h)).toBe(85n);
+
+    // Alice discovers compromise and revokes
+    registry.revokeAttestation(ALICE, h);
+    expect(registry.getTrustScore(h)).toBe(0n);
+
+    // Alice cannot re-attest (SingleUseClaim nullifier is permanent)
+    expect(() => registry.attest(ALICE, h, 85, ClaimType.CODE_REVIEW)).toThrow(
+      "SingleUseClaim already consumed",
+    );
+    // Score remains 0 — no second attestation possible
+    expect(registry.getTrustScore(h)).toBe(0n);
+    expect(registry.getAttestationCount(h)).toBe(0n);
+  });
+
+  it("revoke-then-re-attest is blocked even with a different claimType", () => {
+    const h = makeSkillHash("claim-type-change-skill");
+    registry.attest(ALICE, h, 80, ClaimType.CODE_REVIEW);
+    registry.revokeAttestation(ALICE, h);
+    // Trying with a different claim type — still blocked (same auditor+skill key)
+    expect(() => registry.attest(ALICE, h, 80, ClaimType.SANDBOXED_EXECUTION)).toThrow(
+      "SingleUseClaim already consumed",
+    );
+  });
+
+  it("a second auditor CAN re-attest a revoked skill", () => {
+    const h = makeSkillHash("recoverable-skill");
+
+    // Alice attests then revokes
+    registry.attest(ALICE, h, 80, ClaimType.CODE_REVIEW);
+    registry.revokeAttestation(ALICE, h);
+    expect(registry.getTrustScore(h)).toBe(0n);
+
+    // Bob (fresh identity) can still attest — no claim spent for BOB+h
+    expect(() => registry.attest(BOB, h, 90, ClaimType.BEHAVIORAL)).not.toThrow();
+    expect(registry.getTrustScore(h)).toBe(90n);
+    expect(registry.getAttestationCount(h)).toBe(1n);
+  });
+
+  it("revocation does not release the claim — it is permanently consumed", () => {
+    const h = makeSkillHash("claim-permanent-skill");
+    registry.attest(ALICE, h, 75, ClaimType.CODE_REVIEW);
+    registry.revokeAttestation(ALICE, h);
+
+    // After revocation, Alice's attest_claims entry for this skill is still spent
+    // (the SingleUseClaim nullifier cannot be "un-emitted")
+    // The only action Alice can take regarding this skill is... nothing.
+    expect(registry.getAuditorNoteCount(ALICE)).toBe(0);
+    expect(() => registry.attest(ALICE, h, 75, ClaimType.CODE_REVIEW)).toThrow(
+      "SingleUseClaim already consumed",
+    );
+    expect(() => registry.revokeAttestation(ALICE, h)).toThrow("No AttestationNote found");
+  });
+});
+
+// ─── AUTHWIT EDGE CASES: OWNER SELF-CALL GUARD ───────────────────────────────
+//
+// The self-call bypass (no authwit required) ONLY applies when BOTH:
+//   1. callerAddress === ownerAddress
+//   2. nonce === 0n
+// If the owner calls with nonce != 0, they are NOT treated as a self-call
+// and an authwit is required. This prevents nonce confusion and ensures
+// the authorization path is explicit.
+
+describe("AuthWit — owner non-zero nonce requires authwit", () => {
+  let registry: MockIsnadRegistry;
+
+  beforeEach(() => { registry = new MockIsnadRegistry(); });
+
+  it("owner with nonce=0 always bypasses authwit check (self-call)", () => {
+    registry.storeCredential(CAROL, hashKeyId("self-zero"), encodeValue("val"), "v");
+    // nonce=0 + caller=owner → self-call bypass
+    expect(() =>
+      registry.getCredentialForSkill(CAROL, CAROL, hashKeyId("self-zero"), 0n),
+    ).not.toThrow();
+  });
+
+  it("owner with nonce != 0 is NOT treated as self-call — requires authwit", () => {
+    registry.storeCredential(CAROL, hashKeyId("self-nonzero"), encodeValue("val"), "v");
+    // nonce=1 even though caller=owner — not a self-call
+    expect(() =>
+      registry.getCredentialForSkill(CAROL, CAROL, hashKeyId("self-nonzero"), 1n),
+    ).toThrow("no valid AuthWit");
+  });
+
+  it("owner can grant themselves an authwit with non-zero nonce and use it", () => {
+    registry.storeCredential(CAROL, hashKeyId("self-authwit"), encodeValue("val"), "v");
+    const nonce = 42n;
+    // Carol grants herself an authwit (e.g., for a scheduled job that calls as CAROL)
+    registry.grantCredentialAccess(CAROL, CAROL, hashKeyId("self-authwit"), nonce);
+    // Now the call succeeds
+    const result = registry.getCredentialForSkill(CAROL, CAROL, hashKeyId("self-authwit"), nonce);
+    expect(decodeValue(result)).toBe("val");
+  });
+
+  it("owner self-authwit is still single-use", () => {
+    registry.storeCredential(CAROL, hashKeyId("self-su"), encodeValue("val"), "v");
+    const nonce = 99n;
+    registry.grantCredentialAccess(CAROL, CAROL, hashKeyId("self-su"), nonce);
+    registry.getCredentialForSkill(CAROL, CAROL, hashKeyId("self-su"), nonce);
+    expect(() =>
+      registry.getCredentialForSkill(CAROL, CAROL, hashKeyId("self-su"), nonce),
+    ).toThrow("AuthWit already consumed");
+  });
+});
+
+// ─── CREDENTIAL CAPACITY: OVERFLOW TRUNCATION ────────────────────────────────
+//
+// The CredentialNote.value field is [Field; 4], where each Field holds 31 bytes.
+// Total capacity: 4 × 31 = 124 bytes.
+//
+// encodeValue() silently truncates inputs longer than 124 bytes — bytes 124+ are
+// lost. This is a known design limitation: callers MUST ensure values fit within
+// 124 bytes before calling store_credential(). The SDK documents this limit.
+//
+// Users attempting to store longer values will get a truncated credential back.
+// This should be caught at the UI layer (max-length validation) rather than
+// surfaced as a contract-level error.
+
+describe("Credential capacity — overflow truncation at 124 bytes", () => {
+  it("value of exactly 124 bytes stores and retrieves without loss", () => {
+    const v = "X".repeat(124);
+    expect(decodeValue(encodeValue(v))).toBe(v);
+    expect(decodeValue(encodeValue(v)).length).toBe(124);
+  });
+
+  it("value of 125 bytes is silently truncated to 124 bytes on encode", () => {
+    const v = "A".repeat(124) + "Z"; // 125 chars: last 'Z' is beyond capacity
+    const encoded = encodeValue(v);
+    const decoded = decodeValue(encoded);
+    // The trailing 'Z' is dropped
+    expect(decoded.length).toBe(124);
+    expect(decoded).toBe("A".repeat(124));
+    expect(decoded).not.toContain("Z");
+  });
+
+  it("value of 200 bytes stores only the first 124 bytes", () => {
+    // First 62 bytes are 'A', next 62 are 'B', next 76 are 'C'
+    // After truncation, we expect 62 'A's + 62 'B's (= 124 total; the 'C' block is dropped)
+    const v = "A".repeat(62) + "B".repeat(62) + "C".repeat(76); // 200 chars
+    const decoded = decodeValue(encodeValue(v));
+    expect(decoded.length).toBe(124);
+    expect(decoded).toBe("A".repeat(62) + "B".repeat(62));
+    expect(decoded).not.toContain("C");
+  });
+
+  it("values at the 31-byte boundary (field boundary) encode exactly", () => {
+    // 31 bytes = exactly one Field
+    const v31 = "B".repeat(31);
+    expect(decodeValue(encodeValue(v31))).toBe(v31);
+
+    // 32 bytes = first Field (31) + 1 byte in second Field
+    const v32 = "C".repeat(32);
+    expect(decodeValue(encodeValue(v32))).toBe(v32);
+  });
+});
+
+// ─── TRUST LEVEL TIERS ───────────────────────────────────────────────────────
+//
+// Trust level thresholds (from INTEGRATION.md and clawde.co integration spec):
+//   UNSCORED:    count === 0
+//   EMERGING:    count < 3 OR score < 150
+//   TRUSTED:     count >= 3 AND score >= 150 AND (count < 10 OR score < 500)
+//   ESTABLISHED: count >= 10 AND score >= 500
+
+describe("Trust level tier boundaries", () => {
+  function classifyTrustLevel(score: bigint, count: bigint): string {
+    if (count === 0n) return "UNSCORED";
+    if (count < 3n || score < 150n) return "EMERGING";
+    if (count < 10n || score < 500n) return "TRUSTED";
+    return "ESTABLISHED";
+  }
+
+  it("zero attestations = UNSCORED", () => {
+    expect(classifyTrustLevel(0n, 0n)).toBe("UNSCORED");
+  });
+
+  it("1 attestation, low score = EMERGING", () => {
+    expect(classifyTrustLevel(80n, 1n)).toBe("EMERGING");
+  });
+
+  it("2 attestations, score >= 150 = still EMERGING (count < 3)", () => {
+    expect(classifyTrustLevel(200n, 2n)).toBe("EMERGING");
+  });
+
+  it("3 attestations, score >= 150 = TRUSTED", () => {
+    expect(classifyTrustLevel(150n, 3n)).toBe("TRUSTED");
+  });
+
+  it("9 attestations, high score = still TRUSTED (count < 10)", () => {
+    expect(classifyTrustLevel(800n, 9n)).toBe("TRUSTED");
+  });
+
+  it("10 attestations, score >= 500 = ESTABLISHED", () => {
+    expect(classifyTrustLevel(500n, 10n)).toBe("ESTABLISHED");
+  });
+
+  it("contract state reaches ESTABLISHED tier with 10 auditors at quality >= 50", () => {
+    const registry = new MockIsnadRegistry();
+    const auditors = Array.from({ length: 10 }, (_, i) => "0x" + i.toString().padStart(64, "0"));
+    const h = makeSkillHash("established-skill content for genesis");
+
+    for (const addr of auditors) {
+      registry.attest(addr, h, 55, ClaimType.CODE_REVIEW); // 10 × 55 = 550
+    }
+
+    const score = registry.getTrustScore(h);
+    const count = registry.getAttestationCount(h);
+    expect(count).toBe(10n);
+    expect(score).toBe(550n);
+    expect(classifyTrustLevel(score, count)).toBe("ESTABLISHED");
+  });
+
+  it("ClawHavoc malicious skill reaches zero score after all attestations revoked", () => {
+    const registry = new MockIsnadRegistry();
+    const auditors = [ALICE, BOB, CAROL];
+    const h = makeSkillHash("malicious-skill-discovered-by-clawhavoc");
+
+    // Initially attested (before discovery)
+    for (const addr of auditors) {
+      registry.attest(addr, h, 60, ClaimType.CODE_REVIEW);
+    }
+    expect(registry.getTrustScore(h)).toBe(180n);
+
+    // All auditors revoke after malicious behavior discovered
+    for (const addr of auditors) {
+      registry.revokeAttestation(addr, h);
+    }
+    expect(registry.getTrustScore(h)).toBe(0n);
+    expect(registry.getAttestationCount(h)).toBe(0n);
+    expect(classifyTrustLevel(0n, 0n)).toBe("UNSCORED");
+  });
+});
+
 // ─── ENCODING EDGE CASES ─────────────────────────────────────────────────────
 
 describe("Field encoding edge cases", () => {

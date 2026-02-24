@@ -44,9 +44,19 @@ export default function TrustBrowserPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
+  // Validate a skill hash string: must be "0x" followed by 1-64 hex characters.
+  const isValidHash = useCallback((h: string): boolean => {
+    return /^0x[0-9a-fA-F]{1,64}$/.test(h.trim());
+  }, []);
+
   const doSearch = useCallback(async (hash: string) => {
     const clean = hash.trim();
     if (!clean) return;
+
+    if (!isValidHash(clean)) {
+      setError("Invalid hash format. Expected 0x followed by up to 64 hex characters.");
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -66,7 +76,7 @@ export default function TrustBrowserPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isValidHash]);
 
   const handleSearch = useCallback(() => {
     doSearch(inputHash);
@@ -130,15 +140,19 @@ export default function TrustBrowserPage() {
             onChange={(e) => setInputHash(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="0x7f3a... (SHA256 of skill file content)"
-            className="
-              flex-1 bg-void-100 border border-wire rounded px-3 py-2.5
+            className={`
+              flex-1 bg-void-100 border rounded px-3 py-2.5
               font-mono text-sm text-ink placeholder-ink-faint
-              focus:border-amber transition-colors
-            "
+              transition-colors focus:outline-none
+              ${inputHash.trim() && !isValidHash(inputHash)
+                ? "border-signal-danger focus:border-signal-danger"
+                : "border-wire focus:border-amber"
+              }
+            `}
           />
           <button
             onClick={handleSearch}
-            disabled={isLoading || !inputHash.trim()}
+            disabled={isLoading || !inputHash.trim() || !isValidHash(inputHash)}
             className="
               px-4 py-2.5 rounded border border-wire-50 font-mono text-sm text-ink-muted
               hover:border-amber hover:text-amber transition-colors

@@ -27,13 +27,17 @@ function AddCredentialForm({ onSuccess, onCancel }: AddCredentialFormProps) {
   const [keyId, setKeyId] = useState("");
   const [label, setLabel] = useState("");
   const [value, setValue] = useState("");
+
+  // Compute UTF-8 byte length for capacity check (CredentialNote.value = [Field; 4] = 124 bytes max)
+  const valueByteLength = new TextEncoder().encode(value).length;
+  const valueOverCapacity = valueByteLength > 124;
   const [phase, setPhase] = useState<"idle" | "proving" | "submitting" | "done" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [errorMsg, setErrorMsg] = useState<string | undefined>();
   const [showValue, setShowValue] = useState(false);
 
   const handleSubmit = useCallback(async () => {
-    if (!sdk || !keyId.trim() || !value.trim()) return;
+    if (!sdk || !keyId.trim() || !value.trim() || valueOverCapacity) return;
     setPhase("proving");
     try {
       const result = await sdk.storeCredential(
@@ -106,29 +110,51 @@ function AddCredentialForm({ onSuccess, onCancel }: AddCredentialFormProps) {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="font-mono text-xs text-ink-muted">Secret value</label>
-            <button
-              type="button"
-              onClick={() => setShowValue(!showValue)}
-              className="font-mono text-xs text-ink-faint hover:text-ink-muted transition-colors"
-            >
-              {showValue ? "hide" : "show"}
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Live byte counter */}
+              <span className={`font-mono text-xs tabular-nums ${
+                valueOverCapacity
+                  ? "text-signal-danger"
+                  : valueByteLength > 100
+                    ? "text-amber"
+                    : "text-ink-faint"
+              }`}>
+                {valueByteLength} / 124 bytes
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowValue(!showValue)}
+                className="font-mono text-xs text-ink-faint hover:text-ink-muted transition-colors"
+              >
+                {showValue ? "hide" : "show"}
+              </button>
+            </div>
           </div>
           <input
             type={showValue ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="sk-... or ghp_..."
-            className="
-              w-full bg-void-100 border border-wire rounded px-3 py-2
+            className={`
+              w-full bg-void-100 border rounded px-3 py-2
               font-mono text-sm text-ink placeholder-ink-faint
-              focus:border-amber transition-colors
-            "
+              transition-colors focus:outline-none
+              ${valueOverCapacity
+                ? "border-signal-danger focus:border-signal-danger"
+                : "border-wire focus:border-amber"
+              }
+            `}
             disabled={isSubmitting}
           />
-          <p className="font-mono text-xs text-ink-faint">
-            Encrypted with your PXE key. Max 124 bytes. Nobody else can read this.
-          </p>
+          {valueOverCapacity ? (
+            <p className="font-mono text-xs text-signal-danger">
+              Value exceeds 124-byte capacity — trim before storing.
+            </p>
+          ) : (
+            <p className="font-mono text-xs text-ink-faint">
+              Encrypted with your PXE key. Max 124 bytes. Nobody else can read this.
+            </p>
+          )}
         </div>
 
         {/* Proof progress */}
@@ -138,7 +164,7 @@ function AddCredentialForm({ onSuccess, onCancel }: AddCredentialFormProps) {
         {phase !== "done" && (
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !keyId.trim() || !value.trim()}
+            disabled={isSubmitting || !keyId.trim() || !value.trim() || valueOverCapacity}
             className="
               w-full py-2.5 rounded border border-amber/50 text-amber font-mono text-sm
               hover:bg-amber/5 hover:border-amber transition-colors
@@ -150,6 +176,8 @@ function AddCredentialForm({ onSuccess, onCancel }: AddCredentialFormProps) {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
                 {phase === "proving" ? "Generating ZK proof..." : "Storing..."}
               </span>
+            ) : valueOverCapacity ? (
+              "Value too large (max 124 bytes)"
             ) : (
               "Store credential"
             )}
