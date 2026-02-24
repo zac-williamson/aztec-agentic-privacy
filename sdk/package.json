@@ -11,13 +11,26 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "gen-artifacts": "node scripts/gen-artifacts.js",
     "build": "tsup src/index.ts --format esm --dts",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
     "test": "vitest run",
     "test:integration": "vitest run tests/sdk.integration.test.ts",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@aztec/accounts": "4.0.0-devnet.2-patch.0",
@@ -45,5 +58,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/nullius-/isnad-chain"
+  },
+  "homepage": "https://github.com/nullius-/isnad-chain#readme",
+  "bugs": {
+    "url": "https://github.com/nullius-/isnad-chain/issues"
   }
 }

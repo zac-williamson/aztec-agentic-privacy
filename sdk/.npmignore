@@ -1,0 +1,17 @@
+# Development
+tests/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+tsconfig.json
+scripts/
+
+# Build artifacts that ship in src/ only
+*.map
+
+# Dependencies (npm resolves these separately)
+node_modules/
+
+# Internal
+.env*
+package-lock.json
