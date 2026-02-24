@@ -3,3 +3,5 @@ dist/
 *.log
 codegenCache.json
 sdk/codegenCache.json
+frontend/out/
+frontend/.next/
