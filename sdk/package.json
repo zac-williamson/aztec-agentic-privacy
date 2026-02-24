@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@aztec/pxe": "4.0.0-devnet.2-patch.0",
+    "@aztec/wallets": "^4.0.0-devnet.2-patch.0",
     "@types/node": "^22.0.0",
     "tsup": "^8.5.1",
     "typescript": "^5.4.0",

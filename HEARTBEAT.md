@@ -52,7 +52,7 @@ You are in the BUILD phase. Your goals:
 - `aztec codegen` generates TypeScript interfaces from compiled contracts.
 - `nargo --version` should show 1.0.0-beta.18.
 - `aztec --version` should show 4.0.0-devnet.2-patch.0.
-- The BB environment variable is set automatically. Both `aztec compile` and `aztec codegen` work.
+- The BB environment variable and LD_PRELOAD are set automatically. `aztec compile`, `aztec codegen`, and `aztec start` all work.
 - Do NOT use Docker. Do NOT create Docker-related tasks.
 
 ## Git Workflow
