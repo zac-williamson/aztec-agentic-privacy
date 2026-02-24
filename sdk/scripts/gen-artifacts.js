@@ -58,6 +58,30 @@ try {
 artifact.transpiled = true;
 console.log("[2] Patched artifact with transpiled=true");
 
+// 2b. Strip __aztec_nr_internals__ prefix from function names.
+//
+// nargo compile (used on this machine) emits the low-level ACIR entrypoint names
+// with this prefix because they're the circuit's internal function names.
+// aztec compile (which requires bb / GLIBC 2.38+) strips this prefix during the
+// transpilation step, leaving clean names like "attest", "get_trust_score", etc.
+//
+// Since we use the nargo artifact directly (patched with transpiled=true), we need
+// to replicate the name-stripping step manually so that:
+//   (a) aztec codegen produces TypeScript bindings with clean method names
+//   (b) isnad.ts can call methods.attest(...) instead of methods.__aztec_nr_internals__attest(...)
+//   (c) The SDK matches what aztec compile would have produced
+const PREFIX = "__aztec_nr_internals__";
+let renamedCount = 0;
+artifact.functions = artifact.functions.map((fn) => {
+  if (fn.name && fn.name.startsWith(PREFIX)) {
+    const cleanName = fn.name.slice(PREFIX.length);
+    renamedCount++;
+    return { ...fn, name: cleanName };
+  }
+  return fn;
+});
+console.log(`[2b] Stripped '${PREFIX}' prefix from ${renamedCount} function names`);
+
 // 3. Write patched artifact to sdk/src/artifacts/
 mkdirSync(artifactsDir, { recursive: true });
 writeFileSync(artifactDest, JSON.stringify(artifact, null, 2));
