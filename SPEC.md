@@ -12,7 +12,6 @@ A privacy-preserving application built on the Aztec network, designed specifical
 - `aztec` v4.0.0-devnet.2-patch.0 — CLI tools
 - Use `nargo compile` (NOT `aztec-nargo`, NOT Docker)
 - `aztec codegen` status: investigate native alternatives
-- Docker is NOT installed on this machine. Do not reference it.
 
 ## Technical Research
 
@@ -1761,7 +1760,7 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 - [x] Shared components: Nav (sticky header + wallet button), TrustScore (score + bar + badge), WalletRequired (gate), ProofProgress (animated)
 - [x] Terminal/hacker aesthetic design system (Tailwind) — void/wire/ink/amber/signal palette, monospace throughout
 - [x] Production build passes, zero TypeScript errors
-- Activation path: set `NEXT_PUBLIC_USE_MOCK=false` + `NEXT_PUBLIC_PXE_URL` + `NEXT_PUBLIC_CONTRACT_ADDRESS` once Docker/GLIBC is resolved
+- Activation path: set `NEXT_PUBLIC_USE_MOCK=false` + `NEXT_PUBLIC_PXE_URL` + `NEXT_PUBLIC_CONTRACT_ADDRESS` once local sandbox is available
 
 ---
 
