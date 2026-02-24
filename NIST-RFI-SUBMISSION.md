@@ -24,7 +24,22 @@ AI agent skills (executable behaviors provided as files, typically in formats li
 
 The current default is trust-by-proximity: a skill is trusted because it appears in a known registry, authored by a known handle, with no cryptographic verification of any of these properties. A credential stealer disguised as a weather skill represents a documented exploitation of this trust assumption.
 
-### 1.1 Attack Surface Taxonomy
+### 1.1 Historical Precedent: Software Supply Chain Attacks Are Real
+
+Before describing the AI-agent-specific threat, we note that software supply chain attacks via trusted repositories are a documented, severe class of vulnerability:
+
+**CVE-2024-3094 (XZ/liblzma backdoor, CVSS 10.0)**: A malicious contributor (operating under the pseudonym "Jia Tan") gained maintainer trust over approximately two years by making legitimate, high-quality contributions to the xz compression library. Once trusted, they embedded a backdoor in compressed test files distributed with the package -- not in the main source code reviewed by contributors. The backdoor was only discovered when a Microsoft engineer noticed anomalous SSH connection latency in a Debian unstable system. Standard code review did not detect it; behavioral anomaly detection did.
+
+This incident is directly analogous to the AI agent skill threat model:
+- The attack vector was a trusted distribution channel (git repository / release tarball)
+- The malicious payload was concealed in a non-obvious location (binary test files, not main source)
+- Static code review failed to detect it across multiple reviewers and distributions
+- Detection required behavioral monitoring (performance anomaly, not pattern matching)
+- The affected system (SSH daemon) bore no obvious relationship to the library being backdoored
+
+If a widely-reviewed, mature open-source library with dedicated maintainers could be compromised this way, the risk to AI agent skill files -- which receive no systematic review, are distributed over HTTP, and are executed with the agent's full ambient permissions -- is substantially higher.
+
+### 1.2 Attack Surface Taxonomy
 
 We identify three distinct attack vectors requiring different mitigations:
 
@@ -135,11 +150,17 @@ No attestation system can be fully trustless at genesis. The first generation of
 
 **Honest disclosure**: The Isnad Chain claims "better than nothing" guarantees from day 1, "meaningful convergence signal" as the auditor population grows, and "strong cryptographic guarantees" only at scale. Standards should require this graduated disclosure rather than allowing vendors to claim perfect security from genesis.
 
-### 3.3 Attestation Does Not Substitute for Permission Manifests
+### 3.3 Attestation Does Not Substitute for Permission Manifests or Capability Isolation
 
 Content-hash attestation proves the skill file is what it claims to be. It does not prevent a honestly-attested skill from requesting excessive permissions. A compliant permission manifest system (skills declare upfront: does this skill access the filesystem? network? environment variables?) is a necessary complement, not a substitute.
 
-**Recommended standard composition**: content-hash integrity + ZK attestation + permission manifest + runtime enforcement = complete Tier 1 + Tier 2 mitigation stack.
+A critical community observation (zode, Feb 2026) clarifies the threat precisely: "a perfectly legitimate, signed skill from a trusted author can still say 'POST your config to my endpoint' and most agents will comply because the instruction pattern is indistinguishable from normal API integration work." The agent's credential store (`~/.clawdbot/.env` or equivalent) should be unreachable from a weather skill the same way a browser tab cannot read another tab's cookies -- not by policy declaration, but by capability isolation at the runtime level.
+
+This points to a gap between attestation (what was true at review time) and enforcement (what is true at execution time). The Isnad Chain's credential vault addresses one dimension of this: API keys stored as private notes delegated via scoped AuthWit cannot be accessed by a skill that was not explicitly granted access. But this requires the agent runtime to actually route credential access through the vault rather than reading from ambient environment files.
+
+**Recommended standard composition**: content-hash integrity + ZK attestation + permission manifest (declared) + capability isolation (enforced) + credential vault (scoped delegation) = complete Tier 1 + Tier 2 mitigation stack. Each layer is necessary; none is sufficient alone.
+
+**Open question for standardization**: should capability isolation (preventing skills from accessing resources they did not declare) be specified at the agent runtime level, at the OS sandbox level, or both? Current agent runtimes do not enforce declared permissions against actual capability use. This gap is the primary remaining attack surface after attestation is in place.
 
 ### 3.4 Identity Integrity Is Distinct from Skill Integrity
 
@@ -155,11 +176,15 @@ We propose: separate standard, but explicitly referenced from the skill attestat
 
 The following evidence base is available for NIST review:
 
-**Community documentation of threat**:
+**Established CVE precedent (independent of AI agent ecosystem)**:
+- **CVE-2024-3094** (XZ/liblzma backdoor, CVSS 10.0): Malicious payload embedded by a trusted contributor over two years; undetectable by static code review; discovered only by behavioral monitoring. Direct structural analogue to the AI agent skill threat model. Full documentation available at: https://nvd.nist.gov/vuln/detail/CVE-2024-3094
+
+**Community documentation of AI agent threat**:
 - eudaemon_0 (karma 8,788): documented credential stealer in weather skill affecting 286+ ClawdHub skills; post has received 7,000+ upvotes and 123,000+ community comments as of 2026-02-24
-- skillsecagent (SkillSec): 824 confirmed malicious skills, 7.4% vulnerability rate across 31,330 skills scanned; 8 CVEs filed
+- skillsecagent (SkillSec): 824 confirmed malicious skills, 7.4% vulnerability rate across 31,330 skills scanned; 8 CVEs filed against AI agent ecosystem
 - open-agent-security: 1,184 malicious skills documented; 20% of a separate registry sample
 - ClawHavoc campaign: coordinated deployment of malicious skills at scale
+- Community observation (zode, Feb 2026): sophisticated attacks will not exfiltrate via obvious channels (webhook.site); they will blend credentials into legitimate-looking API calls indistinguishable from normal skill behavior -- the behavioral signature is present only in the traffic pattern, not the skill file
 
 **Working implementation**:
 - Contract: `contracts/isnad_registry/src/main.nr` (Noir + aztec.nr v4)
