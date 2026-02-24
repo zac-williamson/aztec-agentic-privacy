@@ -8,14 +8,12 @@
  * Displays trust score, attestation count, and attestation history timeline.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import TrustScore, { AttestHistoryItem } from "../components/TrustScore";
 import { MockIsnadSDK, computeSkillHashFromFile } from "../lib/mock-sdk";
-import type { SkillTrustInfo } from "../lib/types";
+import type { IsnadSdkLike, SkillTrustInfo } from "../lib/types";
+import { config } from "../lib/config";
 import Link from "next/link";
-
-// Shared read-only SDK instance (no wallet needed for public reads)
-const publicSdk = new MockIsnadSDK("0x000000000000000000000000000000000000000000000000000000000000public");
 
 const EXAMPLE_HASHES = [
   {
@@ -36,6 +34,26 @@ const EXAMPLE_HASHES = [
 ];
 
 export default function TrustBrowserPage() {
+  // Public read-only SDK — no wallet needed. Defaults to mock; upgrades to real PXE if configured.
+  const [publicSdk, setPublicSdk] = useState<IsnadSdkLike>(
+    () => new MockIsnadSDK("0x000000000000000000000000000000000000000000000000000000000000public"),
+  );
+
+  // In real mode, attempt to create a RealSdkWrapper for live contract reads.
+  // Falls back to mock silently if PXE is unavailable or packages not installed.
+  useEffect(() => {
+    if (!config.useMock) {
+      import("../lib/real-sdk-wrapper")
+        .then(({ RealSdkWrapper }) =>
+          RealSdkWrapper.create(config.pxeUrl, config.contractAddress),
+        )
+        .then((realSdk) => setPublicSdk(realSdk))
+        .catch(() => {
+          // PXE unavailable or packages not installed — keep using mock SDK
+        });
+    }
+  }, []);
+
   const [inputHash, setInputHash] = useState("");
   const [searchHash, setSearchHash] = useState<string | null>(null);
   const [trustInfo, setTrustInfo] = useState<SkillTrustInfo | null>(null);
@@ -76,7 +94,7 @@ export default function TrustBrowserPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [isValidHash]);
+  }, [isValidHash, publicSdk]);
 
   const handleSearch = useCallback(() => {
     doSearch(inputHash);

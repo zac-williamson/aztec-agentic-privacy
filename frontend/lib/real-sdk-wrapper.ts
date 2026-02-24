@@ -68,9 +68,11 @@ export class RealSdkWrapper implements IsnadSdkLike {
     let IsnadSDK: any;
 
     try {
-      const aztecJs = await import("@aztec/aztec.js");
+      // webpackIgnore: true prevents webpack from trying to bundle these at build time.
+      // They are resolved at runtime from node_modules when PXE is available.
+      const aztecJs = await import(/* webpackIgnore: true */ "@aztec/aztec.js");
       createPXEClient = aztecJs.createPXEClient;
-      AztecAddress = (await import("@aztec/aztec.js/addresses")).AztecAddress;
+      AztecAddress = (await import(/* webpackIgnore: true */ "@aztec/aztec.js/addresses")).AztecAddress;
     } catch {
       throw new Error(
         "Missing @aztec/aztec.js. Run: cd frontend && npm install @aztec/aztec.js@4.0.0-devnet.2-patch.0",
@@ -78,7 +80,7 @@ export class RealSdkWrapper implements IsnadSdkLike {
     }
 
     try {
-      const accountsModule = await import("@aztec/accounts");
+      const accountsModule = await import(/* webpackIgnore: true */ "@aztec/accounts");
       getDeployedTestAccounts = accountsModule.getDeployedTestAccounts;
     } catch {
       throw new Error(
@@ -87,7 +89,7 @@ export class RealSdkWrapper implements IsnadSdkLike {
     }
 
     try {
-      const sdkModule = await import("@nullius/isnad");
+      const sdkModule = await import(/* webpackIgnore: true */ "@nullius/isnad");
       IsnadSDK = sdkModule.IsnadSDK;
     } catch {
       throw new Error(

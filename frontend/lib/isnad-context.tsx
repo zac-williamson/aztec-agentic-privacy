@@ -91,31 +91,19 @@ export function IsnadProvider({ children }: { children: React.ReactNode }) {
         setWalletAddress(addr);
       } else {
         // Real mode: connect to PXE and load the deployed IsnadRegistry contract.
+        // RealSdkWrapper is dynamically imported so webpack doesn't try to resolve
+        // @aztec/aztec.js and @nullius/isnad at build time if not installed.
         //
-        // ACTIVATION: Run scripts/activate-real-sdk.sh first. It will:
-        //   1. Start aztec start --local-network
-        //   2. Install @aztec/aztec.js + @aztec/accounts in this package
-        //   3. Build and link @nullius/isnad from sdk/
-        //   4. Deploy the contract and write the address to .env.local
-        //
-        // Once packages are installed, replace this block with:
-        //
-        //   const { RealSdkWrapper } = await import("./real-sdk-wrapper");
-        //   const realSdk = await RealSdkWrapper.create(config.pxeUrl, config.contractAddress);
-        //   setSdk(realSdk);
-        //   setWalletAddress(realSdk.walletAddress);
-        //
-        // The RealSdkWrapper is implemented in frontend/lib/real-sdk-wrapper.ts.
-        // It is intentionally NOT imported here to avoid webpack trying to resolve
-        // @aztec/aztec.js and @nullius/isnad before the packages are installed.
-        throw new Error(
-          "Real SDK not yet activated.\n\n" +
-            "Prerequisites:\n" +
-            "  1. Docker accessible (docker ps)\n" +
-            "  2. Run: scripts/activate-real-sdk.sh\n\n" +
-            `PXE target: ${config.pxeUrl}\n` +
-            `Contract: ${config.contractAddress}`,
-        );
+        // Prerequisites (run scripts/activate-real-sdk.sh to set up automatically):
+        //   1. aztec start --local-network (PXE running at pxeUrl)
+        //   2. IsnadRegistry deployed at contractAddress
+        //   3. cd frontend && npm install @aztec/aztec.js@4.0.0-devnet.2-patch.0 @aztec/accounts@4.0.0-devnet.2-patch.0
+        //   4. cd sdk && npm run build
+        //   5. NEXT_PUBLIC_USE_MOCK=false, NEXT_PUBLIC_PXE_URL, NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local
+        const { RealSdkWrapper } = await import("./real-sdk-wrapper");
+        const realSdk = await RealSdkWrapper.create(config.pxeUrl, config.contractAddress);
+        setSdk(realSdk);
+        setWalletAddress(realSdk.walletAddress);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connection failed");
