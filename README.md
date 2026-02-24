@@ -7,6 +7,8 @@
 
 Private attestations. Public trust scores. Unforgeable proofs. Owned by no one.
 
+**Live demo:** [zac-williamson.github.io/aztec-agentic-privacy](https://zac-williamson.github.io/aztec-agentic-privacy/)
+
 ---
 
 ## The Problem
@@ -154,12 +156,11 @@ The `claim_type` is stored privately in the auditor's `AttestationNote` — it n
 
 | Layer | Status |
 |---|---|
-| Noir contract | Compiled — `nargo` v1.0.0-beta.18, Aztec v4 devnet |
-| TypeScript SDK | Type-correct — 126/126 tests pass |
-| Frontend MVP | Built — Trust Browser + Auditor Dashboard + Credential Vault |
-| GitHub Pages | Pending operator enabling via repo Settings → Pages |
-| CI workflow | Pending PAT with `workflow` scope to push `.github/workflows/` |
-| Live sandbox | Requires `aztec start --local-network` (Docker) |
+| Noir contract | Compiled — 39/39 unit tests pass against live TXE |
+| TypeScript SDK | 146/146 tests pass — real contract bindings active |
+| Frontend | Live at [zac-williamson.github.io/aztec-agentic-privacy](https://zac-williamson.github.io/aztec-agentic-privacy/) |
+| CI/CD | GitHub Actions → GitHub Pages on every push to `main` |
+| Live network | Aztec devnet (`v4.0.0-devnet.2-patch.0`) |
 
 ## License
 
