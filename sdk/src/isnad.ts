@@ -11,6 +11,7 @@ import type {
   SkillTrustInfo,
   StoreCredentialOptions,
 } from "./types.js";
+import { ClaimType } from "./types.js";
 import { IsnadRegistryContract } from "./artifacts/IsnadRegistry.js";
 
 /**
@@ -86,11 +87,12 @@ export class IsnadSDK {
    *
    * Generates a ZK proof that you submitted a valid attestation, then increments
    * the skill's public trust score. Your identity is never recorded on-chain.
+   * The claim_type is stored privately in your AttestationNote — never visible on-chain.
    *
    * Proof generation takes 10-60 seconds depending on hardware.
    * The returned promise resolves when the transaction is confirmed.
    *
-   * @param opts  skillHash + quality score (0-100)
+   * @param opts  skillHash + quality score (0-100) + optional claimType
    * @throws      If you have already attested this skill (double-attestation prevented)
    */
   async attest(opts: AttestOptions): Promise<{ txHash: string }> {
@@ -102,8 +104,10 @@ export class IsnadSDK {
       throw new Error(`quality must be 0-100, got ${opts.quality}`);
     }
 
+    const claimType = opts.claimType ?? ClaimType.CODE_REVIEW;
+
     const receipt = await this.contract.methods
-      .attest(hash, opts.quality)
+      .attest(hash, opts.quality, claimType)
       .send({ from: this.from });
     return { txHash: receipt.txHash.toString() };
   }

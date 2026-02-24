@@ -14,6 +14,23 @@ export interface SkillTrustInfo {
 }
 
 /**
+ * Attestation methodology — what kind of audit was performed.
+ *
+ * Encoded as u8 on-chain; stored privately in the AttestationNote.
+ * The claim_type is never revealed publicly — only the auditor knows how they audited.
+ */
+export const ClaimType = {
+  /** Static analysis of skill source code (YARA rules, linting, dependency scanning) */
+  CODE_REVIEW: 0,
+  /** Runtime behavior monitoring (syscall tracing, tool-call auditing, network inspection) */
+  BEHAVIORAL: 1,
+  /** Execution in an isolated sandbox with output verification against a test harness */
+  SANDBOXED_EXECUTION: 2,
+} as const;
+
+export type ClaimType = (typeof ClaimType)[keyof typeof ClaimType];
+
+/**
  * Options for submitting an attestation.
  */
 export interface AttestOptions {
@@ -21,6 +38,12 @@ export interface AttestOptions {
   skillHash: string | Fr;
   /** Quality score: 0-100. How safe/well-written is this skill? */
   quality: number;
+  /**
+   * Attestation methodology. Defaults to ClaimType.CODE_REVIEW (0).
+   * This is stored privately in your AttestationNote — never revealed on-chain.
+   * Use ClaimType.BEHAVIORAL or ClaimType.SANDBOXED_EXECUTION for higher-assurance audits.
+   */
+  claimType?: ClaimType;
 }
 
 /**

@@ -92,10 +92,14 @@ pub contract IsnadRegistry {
     ///
     /// @param skill_hash  SHA256 of the skill file content, packed as a Field
     /// @param quality     Auditor's quality score for the skill: 0-100
+    /// @param claim_type  Attestation methodology:
+    ///                      0 = code_review       (static analysis of source)
+    ///                      1 = behavioral        (runtime behavior monitoring)
+    ///                      2 = sandboxed_execution (isolated sandbox with output verification)
     ///
     /// Reverts if this auditor has already attested this skill (SingleUseClaim).
     #[external("private")]
-    fn attest(skill_hash: Field, quality: u8) {
+    fn attest(skill_hash: Field, quality: u8, claim_type: u8) {
         let auditor = self.context.maybe_msg_sender().unwrap();
 
         // Prevent double-attestation: derive a unique claim key per (auditor, skill).
@@ -106,7 +110,7 @@ pub contract IsnadRegistry {
 
         // Record the attestation privately -- only the auditor can read this.
         // Map.at(auditor) -> Owned<PrivateSet> -> .at(auditor) -> PrivateSet -> .insert()
-        let attestation = AttestationNote { skill_hash, quality, owner: auditor };
+        let attestation = AttestationNote { skill_hash, quality, claim_type, owner: auditor };
         self.storage.attestations.at(auditor).at(auditor).insert(attestation).deliver(
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );

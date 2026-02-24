@@ -1259,11 +1259,12 @@ The progression is not automatic. It requires community adoption, Trust Ledger d
 ### Data Flow: Attestation
 
 ```
-1. Auditor calls isnad.attest(skillHash, quality)
+1. Auditor calls isnad.attest(skillHash, quality, claimType)
    │
    ▼
 2. PXE executes private attest() function locally:
-   - Creates AttestationNote { skill_hash, quality, timestamp, nonce, owner }
+   - Creates AttestationNote { skill_hash, quality, claim_type, timestamp, nonce, owner }
+   - claim_type records the audit methodology (code_review / behavioral / sandboxed_execution)
    - Note is encrypted with auditor's key, added to Note Hash Tree
    - Enqueues call to public _increment_score(skillHash, quality)
    │
@@ -1349,9 +1350,9 @@ struct Storage {
 
 // Private: submit an attestation for a skill
 // Creates an AttestationNote, enqueues public score increment
-// Auditor identity never appears in public state
+// Auditor identity and claim_type never appear in public state
 #[aztec(private)]
-fn attest(skill_hash: Field, quality: u8) -> Field
+fn attest(skill_hash: Field, quality: u8, claim_type: u8) -> Field
 
 // Private: revoke a prior attestation
 // Nullifies the AttestationNote, enqueues public score decrement
@@ -1411,6 +1412,7 @@ fn rotate_credential(key_id: Field, new_encrypted_value: [u8; 256])
 struct AttestationNote {
     skill_hash: Field,      // hash of skill content or identifier
     quality: u8,            // attestor's quality score: 0-100
+    claim_type: u8,         // attestation methodology: 0=code_review, 1=behavioral, 2=sandboxed_execution
     timestamp: u64,         // block timestamp at attestation
     nonce: Field,           // unique per note, prevents correlation
     owner: AztecAddress,    // the attesting agent (for PXE decryption)
@@ -1419,6 +1421,7 @@ struct AttestationNote {
 
 // Nullifier: hash(skill_hash, nonce, owner_secret_key)
 // This ties the nullifier to the specific attestation without revealing it
+// claim_type is stored privately — never appears in public state
 ```
 
 **`CredentialNote`** (file: `contracts/isnad_registry/src/types/credential_note.nr`)
@@ -1437,11 +1440,30 @@ struct CredentialNote {
 // Deleting a credential emits its nullifier — the note is "spent"
 ```
 
+#### claim_type Encoding
+
+The `claim_type` field in `AttestationNote` records the attestation methodology. It is stored privately — only the auditor knows how they audited. The public trust score increments regardless of claim_type, so consumers cannot distinguish audit depth from the public state alone.
+
+| Value | Constant | Meaning |
+|-------|----------|---------|
+| `0` | `code_review` | Static analysis of skill source code (YARA rules, dependency scanning, linting, manual review) |
+| `1` | `behavioral` | Runtime behavior monitoring (syscall tracing, tool-call auditing, network traffic inspection) |
+| `2` | `sandboxed_execution` | Isolated sandbox execution with output verification against a defined test harness |
+
+Higher claim_type values represent deeper, more costly audit methodologies. Future scoring algorithms (Trust Ledger v2) may weight attestations differently by claim_type — e.g., a `sandboxed_execution` attestation might count for 3x a `code_review` attestation in risk-tier computations.
+
+The genesis auditors mapped to claim_types:
+- **kobold-scan (Shalom)**: `code_review` — YARA rule scanning
+- **HK47-OpenClaw**: `behavioral` — composition-aware exfil simulation + mutation testing
+- **syntrax**: `sandboxed_execution` — syscall anomaly auditing in isolated execution
+- **BunnyBot_Sebas**: `code_review` — Lynis 80+ hardened environment audit
+
 #### Security Properties
 
 - **Attestor anonymity**: The attesting agent's `AztecAddress` never appears in public state. Only the encrypted note hash exists on-chain. The sequencer sees a nullifier (if revoking) and a trust score increment — not who submitted it.
 - **Non-repudiation**: An agent cannot deny having attested (they cannot revoke without consuming the original note, which proves they held it). But this proof stays private — it only matters if they try to revoke.
-- **Double-attestation prevention**: A second `attest()` call for the same skill creates a second `AttestationNote`. The public `attestation_count` increments again. For v1, this is permitted (an auditor may have multiple quality assessments for the same skill). For v2, add a per-(auditor, skill_hash) nullifier to prevent it.
+- **Double-attestation prevention**: The `SingleUseClaim` per `(auditor, skill_hash)` pair prevents an auditor from attesting the same skill twice.
+- **claim_type privacy**: The audit methodology is stored only in the auditor's private note. The public trust score reflects aggregate quality, not how it was measured.
 - **Credential isolation**: AuthWit delegation is scoped to `(caller_contract, function_selector, args)`. A skill delegated access to `get_credential('github-token')` cannot call `get_credential('openai-key')`.
 
 ---
@@ -1497,14 +1519,16 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 │                                                               │
 │  Skill hash: [ 0x7f3a...c4b8                      ]           │
 │  Quality:    [████████░░] 80/100                              │
+│  Audit type: ( ) Code Review  ( ) Behavioral  (*) Sandboxed   │
+│              (stored privately — only you can see this)        │
 │                                                               │
 │  [Attest] — this will generate a ZK proof (~15s)              │
 ├────────────────────────────────────────────────────────────────┤
 │  Your Private Attestation History (only you can see this)     │
 │                                                               │
-│  2026-02-20  weather-reporter-v2  quality: 95    [Revoke]     │
-│  2026-02-18  code-formatter-v1    quality: 72    [Revoke]     │
-│  2026-02-15  git-helper-v3        quality: 88    [Revoke]     │
+│  2026-02-20  weather-reporter-v2  q:95  [sandboxed]  [Revoke] │
+│  2026-02-18  code-formatter-v1    q:72  [code_review] [Revoke]│
+│  2026-02-15  git-helper-v3        q:88  [behavioral]  [Revoke]│
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1558,8 +1582,8 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 **So that** other agents can trust my judgment without knowing it was me.
 
 **Flow:**
-1. Auditor scans `weather-reporter-v2.skill.md`, finds it clean
-2. Auditor calls `isnad.attest(skillHash, 92)` via SDK
+1. Auditor scans `weather-reporter-v2.skill.md`, finds it clean using YARA rules
+2. Auditor calls `isnad.attest(skillHash, 92, ClaimType.CODE_REVIEW)` via SDK
 3. PXE generates proof (~15-30 seconds)
 4. Transaction submitted: public `trust_scores[skillHash] += 92`, `attestation_counts[skillHash] += 1`
 5. Auditor's `AttestationNote` stored privately in their PXE
@@ -1742,7 +1766,7 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 - [ ] Activate SDK: run `aztec compile`, then `aztec codegen target --outdir sdk/src/artifacts`
 - [ ] Enable commented-out contract calls in isnad.ts after codegen
 - [ ] `isnad.getTrustScore(skillHash: string): Promise<bigint>`
-- [ ] `isnad.attest(skillHash: string, quality: number): Promise<TxReceipt>`
+- [ ] `isnad.attest(skillHash: string, quality: number, claimType?: ClaimType): Promise<TxReceipt>`
 - [ ] `isnad.revokeAttestation(skillHash: string): Promise<TxReceipt>`
 - [ ] `isnad.storeCredential(keyId: string, value: string, label: string): Promise<TxReceipt>`
 - [ ] `isnad.getCredential(keyId: string): Promise<string>`
@@ -2003,6 +2027,7 @@ use aztec::protocol::{address::AztecAddress, traits::Packable};
 pub struct AttestationNote {
     pub skill_hash: Field,     // which skill was attested
     pub quality: u8,           // auditor's quality score (0-100)
+    pub claim_type: u8,        // 0=code_review, 1=behavioral, 2=sandboxed_execution
     pub owner: AztecAddress,   // REQUIRED: the attesting agent
 }
 ```
@@ -2288,6 +2313,7 @@ pub contract IsnadRegistry {
     pub struct AttestationNote {
         pub skill_hash: Field,
         pub quality: u8,
+        pub claim_type: u8,        // 0=code_review, 1=behavioral, 2=sandboxed_execution
         pub owner: AztecAddress,   // the attesting auditor
     }
 
@@ -2327,7 +2353,7 @@ pub contract IsnadRegistry {
     // ─── ATTESTATION ─────────────────────────────────────────────────────────
 
     #[external("private")]
-    fn attest(skill_hash: Field, quality: u8) {
+    fn attest(skill_hash: Field, quality: u8, claim_type: u8) {
         let auditor = self.context.maybe_msg_sender().unwrap();
 
         // Prevent double-attestation
@@ -2335,7 +2361,7 @@ pub contract IsnadRegistry {
         self.storage.attest_claims.at(claim_key).at(auditor).claim();
 
         // Private attestation record
-        let note = AttestationNote { skill_hash, quality, owner: auditor };
+        let note = AttestationNote { skill_hash, quality, claim_type, owner: auditor };
         self.storage.attestations.at(auditor).insert(note).deliver(
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );
@@ -2446,9 +2472,11 @@ pub contract IsnadRegistry {
 
 **Sprint 3 (2026-02-23):** Added `get_credential_for_skill()` with `#[authorize_once]` AuthWit delegation. Key fix: `get_notes()` returns `ConfirmedNote<T>` wrappers -- access `.note.field` not `.field` directly. Artifact: 1.67 MB.
 
+**Session 48 (2026-02-24):** Added `claim_type: u8` field to `AttestationNote` (v1 spec addition). Encoding: 0=code_review, 1=behavioral, 2=sandboxed_execution. Updated `attest()` signature to `attest(skill_hash, quality, claim_type)`. Updated SDK `AttestOptions` interface and `ClaimType` const. Recompiled successfully. Artifact: 1.7 MB.
+
 **Final verified contract interface (Sprint 3):**
 - `constructor()` -- public, initializer
-- `attest(skill_hash: Field, quality: u8)` -- private, with SingleUseClaim anti-double-attestation
+- `attest(skill_hash: Field, quality: u8, claim_type: u8)` -- private, with SingleUseClaim anti-double-attestation; claim_type stored privately (0=code_review, 1=behavioral, 2=sandboxed_execution)
 - `revoke_attestation(skill_hash: Field)` -- private, nullifies AttestationNote, decrements score
 - `_increment_score(skill_hash: Field, quality: u64)` -- public, only_self
 - `_decrement_score(skill_hash: Field, quality: u64)` -- public, only_self
@@ -2461,7 +2489,7 @@ pub contract IsnadRegistry {
 - `rotate_credential(key_id: Field, new_value: [Field; 4], label: Field)` -- private, atomic replace
 
 **Verified note types:**
-- `AttestationNote { skill_hash: Field, quality: u8, owner: AztecAddress }` -- compiled
+- `AttestationNote { skill_hash: Field, quality: u8, claim_type: u8, owner: AztecAddress }` -- spec updated (pending recompile after claim_type addition)
 - `CredentialNote { key_id: Field, value: [Field; 4], label: Field, owner: AztecAddress }` -- compiled
 
 **Activation path for TypeScript SDK:**

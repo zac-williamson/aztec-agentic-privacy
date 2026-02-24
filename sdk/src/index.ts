@@ -20,8 +20,10 @@
  */
 
 export { IsnadSDK } from "./isnad.js";
+export { ClaimType } from "./types.js";
 export type {
   AttestOptions,
+  ClaimType as ClaimTypeValue,
   CredentialResult,
   DelegatedCredentialOptions,
   GrantAccessOptions,
