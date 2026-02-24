@@ -45,14 +45,14 @@ export class IsnadRegistryContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, ) {
+  public static deploy(wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<IsnadRegistryContract>(PublicKeys.default(), wallet, IsnadRegistryContractArtifact, (instance, wallet) => IsnadRegistryContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, ) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<IsnadRegistryContract>(publicKeys, wallet, IsnadRegistryContractArtifact, (instance, wallet) => IsnadRegistryContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,41 +90,59 @@ export class IsnadRegistryContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'> {
       return {
-        trust_scores: {
+        admin: {
       slot: new Fr(1n),
     },
-attestation_counts: {
+auth_certs: {
       slot: new Fr(2n),
     },
-attestations: {
+is_authorized: {
       slot: new Fr(3n),
     },
-attest_claims: {
+attestor_depth: {
       slot: new Fr(4n),
     },
-credentials: {
+trust_scores: {
       slot: new Fr(5n),
+    },
+attestation_counts: {
+      slot: new Fr(6n),
+    },
+attestations: {
+      slot: new Fr(7n),
+    },
+attest_claims: {
+      slot: new Fr(8n),
+    },
+credentials: {
+      slot: new Fr(9n),
     }
-      } as ContractStorageLayout<'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'>;
+      } as ContractStorageLayout<'admin' | 'auth_certs' | 'is_authorized' | 'attestor_depth' | 'trust_scores' | 'attestation_counts' | 'attestations' | 'attest_claims' | 'credentials'>;
     }
     
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
+    /** add_root_attestor(new_attestor: struct) */
+    add_root_attestor: ((new_attestor: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** attest(skill_hash: field, quality: integer, claim_type: integer) */
     attest: ((skill_hash: FieldLike, quality: (bigint | number), claim_type: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor() */
-    constructor: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(admin: struct) */
+    constructor: ((admin: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** delete_credential(key_id: field) */
     delete_credential: ((key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_attestation_count(skill_hash: field) */
     get_attestation_count: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** get_attestor_depth(addr: struct) */
+    get_attestor_depth: ((addr: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_credential(owner: struct, key_id: field) */
     get_credential: ((owner: AztecAddressLike, key_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -134,6 +152,9 @@ credentials: {
 
     /** get_trust_score(skill_hash: field) */
     get_trust_score: ((skill_hash: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** is_authorized_attestor(addr: struct) */
+    is_authorized_attestor: ((addr: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** process_message(message_ciphertext: struct, message_context: struct) */
     process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -152,6 +173,9 @@ credentials: {
 
     /** sync_state() */
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** vouch(new_attestor: struct) */
+    vouch: ((new_attestor: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
   

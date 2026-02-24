@@ -106,6 +106,28 @@ export interface GrantAccessOptions {
 }
 
 /**
+ * Information about an attestor's position in the Isnad chain.
+ * Returned by getAttestorDepth().
+ */
+export interface AttestorInfo {
+  /** The attestor's Aztec address */
+  address: string;
+  /** Whether this address is in the authorized Isnad chain */
+  isAuthorized: boolean;
+  /**
+   * Vouching chain depth: 0 = root attestor (added by admin), 1 = vouched by root, etc.
+   * Only meaningful if isAuthorized is true.
+   */
+  depth: number;
+  /**
+   * Trust score weight multiplier for this attestor's attestations.
+   * depth=0: weight=4, depth=1: weight=3, depth=2: weight=2, depth=3+: weight=1
+   * effective_quality = quality * weight
+   */
+  weight: number;
+}
+
+/**
  * Options for rotating (replacing) a credential atomically.
  */
 export interface RotateCredentialOptions {

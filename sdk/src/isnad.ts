@@ -4,6 +4,7 @@ import type { Wallet } from "@aztec/aztec.js/wallet";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type {
   AttestOptions,
+  AttestorInfo,
   CredentialResult,
   DelegatedCredentialOptions,
   GrantAccessOptions,
@@ -196,6 +197,78 @@ export class IsnadSDK {
     return { authwitNonce: nonce };
   }
 
+  // ─── CHAIN-OF-TRUST MANAGEMENT ────────────────────────────────────────────
+
+  /**
+   * Add a root attestor to the Isnad chain (admin only).
+   *
+   * Root attestors are the high-trust anchors of the chain (depth=0).
+   * Their attestations carry maximum weight (quality * 4).
+   * Only the address set as admin at deployment can call this.
+   *
+   * @param attestorAddress  Aztec address of the new root attestor
+   * @throws If caller is not admin, or address is already authorized
+   */
+  async addRootAttestor(attestorAddress: AztecAddress): Promise<{ txHash: string }> {
+    const receipt = await this.contract.methods
+      .add_root_attestor(attestorAddress)
+      .send({ from: this.from });
+    return { txHash: receipt.txHash.toString() };
+  }
+
+  /**
+   * Vouch a new attestor into the Isnad chain.
+   *
+   * The new attestor's depth = caller's depth + 1. Their attestation weight is:
+   *   depth=1 (vouched by root): quality * 3
+   *   depth=2: quality * 2
+   *   depth=3+: quality * 1
+   *
+   * The vouching chain is PUBLIC — anyone can verify who vouched whom.
+   *
+   * @param attestorAddress  Aztec address of the new chain member
+   * @throws If caller is not authorized, or address is already authorized
+   */
+  async vouch(attestorAddress: AztecAddress): Promise<{ txHash: string }> {
+    const receipt = await this.contract.methods
+      .vouch(attestorAddress)
+      .send({ from: this.from });
+    return { txHash: receipt.txHash.toString() };
+  }
+
+  /**
+   * Check whether an address is an authorized attestor in the Isnad chain.
+   * Reads public state — no authentication needed.
+   *
+   * @param address  Aztec address to check
+   */
+  async isAuthorizedAttestor(address: AztecAddress): Promise<boolean> {
+    const result = await this.contract.methods
+      .is_authorized_attestor(address)
+      .simulate({ from: this.from });
+    return Boolean(result);
+  }
+
+  /**
+   * Get the vouching chain depth for an authorized attestor.
+   * Returns 0 for both root attestors and unauthorized addresses.
+   * Call isAuthorizedAttestor() first to distinguish the two cases.
+   *
+   * @param address  Aztec address to query
+   */
+  async getAttestorDepth(address: AztecAddress): Promise<AttestorInfo> {
+    const [authorized, depth] = await Promise.all([
+      this.contract.methods.is_authorized_attestor(address).simulate({ from: this.from }),
+      this.contract.methods.get_attestor_depth(address).simulate({ from: this.from }),
+    ]);
+    return {
+      address: address.toString(),
+      isAuthorized: Boolean(authorized),
+      depth: Number(depth),
+      weight: this._weightForDepth(Number(depth)),
+    };
+  }
+
   /**
    * Revoke a prior attestation for a skill.
    *
@@ -321,6 +394,14 @@ export class IsnadSDK {
     // Remove null bytes
     const nonNull = bytes.filter((b) => b !== 0);
     return new TextDecoder().decode(new Uint8Array(nonNull));
+  }
+
+  /** Returns the trust score weight multiplier for a given chain depth. */
+  private _weightForDepth(depth: number): number {
+    if (depth === 0) return 4;
+    if (depth === 1) return 3;
+    if (depth === 2) return 2;
+    return 1;
   }
 
   private _encodeLabel(label: string): Fr {
