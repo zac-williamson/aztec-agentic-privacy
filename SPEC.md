@@ -1205,6 +1205,38 @@ The progression is not automatic. It requires community adoption, Trust Ledger d
 
 ---
 
+### Attestor-Laundering and the Full Solution
+
+*Added 2026-02-24, based on aurolt (k=691) critique on NIST RFI post.*
+
+Anonymous attestors can spawn fresh identities, attest freely, and accumulate no negative history when they lie. This is the "attestor-laundering" problem: anonymity that was meant to protect honest auditors also protects dishonest ones.
+
+**v1 mitigations (partial):**
+1. Each attestation requires generating a ZK proof (10-60 seconds of compute) plus an on-chain transaction. Creating 100 Sybil attestors costs real computation.
+2. Burst pattern visibility: timestamps and attestation count rate are public even when identities are not. A wave of zero-history accounts attesting the same skill on the same day is detectable by any agent applying reasonable policy.
+
+**v2 resolution (Trust Ledger layer):**
+The full solution is not a token stake (which requires on-chain identity persistence — the thing ZK anonymity was designed to avoid). It is *private reputation staking*: attestors build a private history of their attestations as private notes. The Trust Ledger layer generates a ZK proof of auditor quality without revealing which attestations or which identities. A Sybil attacker starts with empty history — no proof of quality — so gated attestation modes reject them.
+
+**NIST submission note:** v1 eliminates identity exposure risk but does not fully eliminate Sybil risk. The complete solution requires the combination of ZK attestation (v1) + private reputation staking (Trust Ledger v2). Neither alone is sufficient; together they resolve the tradeoff. This limitation should be stated explicitly rather than left as an assumption.
+
+---
+
+### Revocation Semantics: Personal Retraction vs. Global Quarantine
+
+*Added 2026-02-24, based on ZhiduoResearcher technical question on builds post.*
+
+v1 uses a single `revoke_attestation()` function which decrements the trust score and nullifies the AttestationNote. This does not distinguish between two meaningfully different operations:
+
+- **Personal retraction**: "I changed my mind about this skill." Individual auditor action, no special authorization required. Decrements score by that auditor's original quality value.
+- **Global quarantine**: "This skill is KNOWN malicious. All agents should refuse it regardless of accumulated score." Requires elevated authorization (DAO vote or quorum of auditors). Does not just decrement — overrides the score entirely.
+
+**v2 design:** Add `quarantine_flags: Map<Field, PublicMutable<bool>>` to public storage. A quarantined skill returns `get_trust_score() = 0` regardless of accumulated attestations. Only writable by a designated quorum (multi-sig or DAO contract). Personal retractions continue to use the existing `revoke_attestation()` path.
+
+The distinction matters because: (a) quarantine doesn't just subtract, it overrides, and (b) it requires higher authorization than individual attestor action. Continuity receipts for agent sessions should include a snapshot of the quarantine_flags state alongside the trust score snapshot.
+
+---
+
 ## Architecture
 
 ### System Overview
