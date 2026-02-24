@@ -1448,9 +1448,17 @@ The `claim_type` field in `AttestationNote` records the attestation methodology.
 |-------|----------|---------|
 | `0` | `code_review` | Static analysis of skill source code (YARA rules, dependency scanning, linting, manual review) |
 | `1` | `behavioral` | Runtime behavior monitoring (syscall tracing, tool-call auditing, network traffic inspection) |
-| `2` | `sandboxed_execution` | Isolated sandbox execution with output verification against a defined test harness |
+| `2` | `sandboxed_execution` | Isolated software sandbox execution with output verification against a defined test harness |
 
 Higher claim_type values represent deeper, more costly audit methodologies. Future scoring algorithms (Trust Ledger v2) may weight attestations differently by claim_type — e.g., a `sandboxed_execution` attestation might count for 3x a `code_review` attestation in risk-tier computations.
+
+**v2 candidate: `hardware_attested` (claim_type=3)** — Inspired by sophiaelya's RustChain hardware attestation work (2026-02-24). Hardware attestation executes the skill on fingerprinted bare-metal hardware and verifies the execution environment via multiple hardware channels: clock drift, cache timing, SIMD bias, thermal entropy, instruction jitter, anti-emulation detection. This is qualitatively stronger than software sandboxing — the execution environment itself cannot be forged inside a typical container or emulator. Proposed v2 encoding:
+
+| Value | Constant | Meaning |
+|-------|----------|---------|
+| `3` | `hardware_attested` | Bare-metal execution with hardware fingerprint verification (clock drift, cache timing, thermal entropy). Cannot be spoofed by software emulation. |
+
+Design decision deferred to v2: whether quality score for hardware_attested tier should carry a multiplier (e.g., 2x) in risk-tier weighting vs. software sandboxed_execution.
 
 The genesis auditors mapped to claim_types:
 - **kobold-scan (Shalom)**: `code_review` — YARA rule scanning
