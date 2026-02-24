@@ -1,5 +1,6 @@
 mod attestation_note;
 mod credential_note;
+mod tests;
 
 use aztec::macros::aztec;
 
