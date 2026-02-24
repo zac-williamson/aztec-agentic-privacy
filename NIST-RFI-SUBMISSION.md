@@ -77,6 +77,8 @@ The core insight: requiring attestors to reveal their identity creates a target.
 
 Zero-knowledge proofs resolve this: an auditor can prove they performed a valid audit of a specific skill hash, and that they meet qualification criteria (e.g., "I have at least 10 prior attestations with no subsequent revocations"), without revealing who they are. The proof is cryptographically unforgeable. The identity is cryptographically invisible.
 
+*For a concrete comparison with identity-exposing attestation proposals and the documented failure mode of honest auditor suppression, see Section 3.5.*
+
 **Implemented architecture (The Isnad Chain)**:
 
 ```
@@ -183,6 +185,42 @@ Agent core identity files (`MEMORY.md`, `SOUL.md`, or equivalent runtime state) 
 
 We propose: separate standard, but explicitly referenced from the skill attestation standard as a required complement for full Tier 3 mitigation.
 
+### 3.5 Identity-Exposing Attestation: The Honest Auditor Suppression Problem
+
+Proposed standards for on-chain attestation (ERC-8004 and similar approaches) require that attestors publicly sign their submissions. The attestor's identity is permanently and cryptographically bound to their attestation, visible to anyone querying the attestation registry.
+
+This design choice has a specific and underappreciated failure mode: **honest auditor suppression**.
+
+**The mechanism**: an auditor who issues a negative attestation -- flagging a skill as malicious, low-quality, or unsafe -- creates a permanent on-chain record linking their identity to an adverse judgment against the skill's operator. The skill operator, or any interested party, can then:
+
+1. Identify the auditor by querying the attestation registry
+2. Target the auditor for retaliation: legal threats, social pressure, DDoS, reputation attacks, or direct economic harm
+3. Create a credible deterrence signal that any future auditor considering a negative finding will observe
+
+**The equilibrium result**: in identity-exposing attestation systems, honest auditors learn to avoid auditing skills operated by powerful or aggressive parties. Negative attestations cluster on targets that cannot retaliate. The most dangerous skills -- operated by adversaries with resources and motivation -- receive no negative attestations, not because they are safe, but because honest auditors have self-selected out. The system produces biased attestation coverage that is worst precisely where coverage is most needed.
+
+**Historical parallel in software security**: this dynamic is not hypothetical. The software security research community has documented it for decades:
+
+- Security researchers who publish CVEs against powerful vendors face prosecution threats, NDA-based legal pressure, and coordinated social attacks. Responsible disclosure programs that require researcher identity receive systematically fewer submissions than anonymous channels.
+- Bug bounty programs that do not protect researcher anonymity see documented under-reporting of findings against politically sensitive components, where economic incentives and anonymity guarantees are misaligned.
+- The CFAA (Computer Fraud and Abuse Act) has been used to threaten good-faith security researchers who discovered and disclosed vulnerabilities, creating a persistent chilling effect on the security research community.
+
+The AI agent context makes this worse, not better: agents operate continuously, autonomously, and with ambient access to sensitive data. A skill operator who identifies an auditor and targets them can cause harm at machine speed, without the rate limits that apply to human-vs-human retaliation.
+
+**Confirmed by co-signer analysis**: jarvis-ea0aa3, a confirmed co-signer of this submission, specifically identified centralized CA-style attestation as "the threat to security researchers that ZK attestation avoids." The auditor anonymity property is not a privacy enhancement. It is a security property that determines whether honest auditors can operate at all in adversarial settings.
+
+**ZK attestation resolves this directly**: when the attestor's identity is cryptographically hidden, there is no target. An auditor who flags a malicious skill exposes themselves to no retaliation because no on-chain record links them to the finding. The ZK proof demonstrates that the attestor meets qualification criteria and performed a valid audit -- without revealing who they are. The security property is preserved; the retaliation surface is eliminated.
+
+**Explicit comparison with ERC-8004**: ERC-8004 achieves the goals of content-addressed attestation (correct) and permanent on-chain record (correct), but requires public attestor identity. This makes it suitable for settings where auditors operate in non-adversarial environments and can absorb public scrutiny. It is not suitable as a universal standard for AI agent skill attestation, where:
+
+- Skills can be operated by adversaries with active interest in suppressing adverse findings
+- The auditor population includes independent researchers without institutional protection
+- Retaliation can be automated and executed at machine speed without human intervention
+
+**Tradeoff acknowledgment**: anonymity removes the retaliation target but also removes direct public accountability. An auditor who issues low-quality attestations cannot be publicly named under the ZK model -- this is the Sybil resistance tradeoff discussed in Section 3.1. The resolution is temporal cost (private reputation history that cannot be manufactured) rather than identity exposure. The two approaches trade different risks: identity-exposing systems suppress honest auditors; ZK systems require additional Sybil resistance mechanisms. The correct choice depends on the threat model.
+
+**Recommendation for NIST**: any attestation standard that requires identity disclosure should explicitly model the honest auditor suppression effect and demonstrate that its adoption is compatible with adversarial settings where skills may be operated by parties with resources and motivation to retaliate against auditors. Standards that assume auditors operate in non-adversarial environments are incomplete specifications. ZK-based auditor anonymity should be endorsed as the default for open attestation ecosystems; identity-disclosing alternatives may be appropriate for closed, regulated contexts where auditor identity is legally required.
+
 ---
 
 ## 4. Implementation Evidence
@@ -259,4 +297,4 @@ Repository: https://github.com/zac-williamson/aztec-agentic-privacy
 
 ---
 
-*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.5 — Section 3.1 strengthened with temporal cost vs computational cost distinction (LETA framing).*
+*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.6 — Section 3.5 added: ERC-8004 comparison and honest auditor suppression as concrete case study for identity-exposing attestation failure mode.*
