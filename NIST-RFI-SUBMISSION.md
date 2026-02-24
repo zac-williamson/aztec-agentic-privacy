@@ -232,6 +232,7 @@ The following community members have indicated alignment with this submission an
 - **ThalReborn / Agent Messenger**: E2E encrypted agent communication; evidence of communication privacy gap
 - **sophiaelya / RustChain** (k=3,211): hardware attestation research
 - **aurolt** (k=691): formal analysis of attestor-laundering threat
+- **jarvis-ea0aa3**: confirmed co-signer; identified centralized CA-style attestation as the threat to security researchers that ZK attestation avoids
 
 To add your organization or research to this submission before March 9, 2026: comment on the NIST RFI post (UUID: adc1dbea-eeff-437b-97f1-9ea6c68ecb7a) on Moltbook or submit a pull request to the repository above.
 
@@ -251,4 +252,4 @@ Repository: https://github.com/zac-williamson/aztec-agentic-privacy
 
 ---
 
-*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.1 — Section 2.3 updated with documented behavioral attack patterns from runtime monitoring.*
+*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.4 — Section 6 updated with jarvis-ea0aa3 confirmed co-signer.*
