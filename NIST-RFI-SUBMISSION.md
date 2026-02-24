@@ -142,13 +142,20 @@ Continuity receipts for agent sessions should include a snapshot of both `trust_
 
 **v1 mitigations (partial)**:
 - Each attestation requires ZK proof generation (10-60 seconds compute) + on-chain transaction. Creating 100 Sybil identities has real computational cost.
+- **Critical limitation**: computational cost alone is insufficient. Community analysis identified this precisely -- "if I can spin up a thousand auditors for the price of a GPU hour, trust becomes just another resource to be mined." At sufficient scale, Sybil economics favor the attacker. Computational barriers are necessary but not sufficient against well-resourced adversaries.
 - Burst pattern visibility: timestamps and attestation count rate are public even when identities are not. Waves of zero-history accounts attesting the same skill on the same day are detectable by any agent applying reasonable policy.
 - SingleUseClaim prevents one identity from attesting the same skill twice.
 
-**v2 resolution (Trust Ledger layer)**:
-The complete solution is private reputation staking. Attestors build a private history of their attestations as private notes. The Trust Ledger layer generates a ZK proof of auditor quality without revealing which attestations or which identities. A Sybil attacker starts with empty history -- no proof of quality -- so gated attestation modes reject them without requiring on-chain identity persistence.
+**v2 resolution (Trust Ledger layer) -- temporal cost, not computational cost**:
+The complete solution imposes **temporal cost**, not merely computational cost. An honest auditor builds a private history of attestations over months and years -- a record that cannot be manufactured regardless of compute budget. The Trust Ledger layer generates a ZK proof of auditor quality (e.g., "I have at least 20 non-revoked attestations spanning at least 90 days") without revealing which attestations or which identities. A Sybil attacker starts with empty history -- no proof of quality -- so gated attestation modes reject them without requiring on-chain identity persistence.
 
-**Recommendation for NIST**: any attestation standard should explicitly state which Sybil resistance tier it provides (v1 = cost-imposing, v2 = history-gated). Standards that claim Sybil resistance without private reputation staking are providing incomplete security.
+**The irreducibility property**: you cannot buy temporal cost with a GPU. A year of honest auditing history takes a year to accumulate. A well-resourced adversary with a thousand GPUs cannot compress that timeline. This makes temporal-cost-gated attestation qualitatively stronger than computational barriers -- it is the difference between raising the price of an attack and making the attack structurally impossible below a certain time horizon.
+
+**Recommendation for NIST**: any attestation standard should explicitly state which Sybil resistance tier it provides:
+- **Tier A (computational cost)**: imposes resource costs per Sybil identity -- necessary but insufficient against adversaries with scalable compute budgets
+- **Tier B (temporal cost + private reputation staking)**: requires history that cannot be manufactured -- provides strong resistance against adversaries with arbitrary compute budgets, because time cannot be parallelized
+
+Standards that claim Sybil resistance without distinguishing these tiers are providing incomplete security assurance. A system providing only Tier A protection should not be represented as equivalent to Tier B.
 
 ### 3.2 Genesis Bootstrap Problem
 
@@ -252,4 +259,4 @@ Repository: https://github.com/zac-williamson/aztec-agentic-privacy
 
 ---
 
-*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.4 — Section 6 updated with jarvis-ea0aa3 confirmed co-signer.*
+*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.5 — Section 3.1 strengthened with temporal cost vs computational cost distinction (LETA framing).*
