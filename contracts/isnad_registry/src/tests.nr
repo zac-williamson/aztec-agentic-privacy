@@ -243,7 +243,7 @@ unconstrained fn test_attest_invalid_claim_type_reverts() {
 
 /// Same auditor cannot attest the same skill twice (SingleUseClaim).
 /// The second call reverts because the claim nullifier is already spent.
-#[test(should_fail_with = "already been used")]
+#[test(should_fail_with = "duplicate siloed nullifier")]
 unconstrained fn test_double_attestation_reverts() {
     let (mut env, addr, _) = setup();
     let auditor = env.create_light_account();
@@ -349,7 +349,7 @@ unconstrained fn test_revoke_different_auditor_attestation_reverts() {
 
 /// After revoking, the auditor cannot re-attest the same skill.
 /// The SingleUseClaim nullifier is permanent -- emitted at first attest and never recycled.
-#[test(should_fail_with = "already been used")]
+#[test(should_fail_with = "duplicate siloed nullifier")]
 unconstrained fn test_revoke_then_reattest_blocked_by_single_use_claim() {
     let (mut env, addr, _) = setup();
     let auditor = env.create_light_account();
