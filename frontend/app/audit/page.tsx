@@ -11,7 +11,6 @@
  *   5. Revoke attestations they no longer stand behind
  */
 
-import type { Metadata } from "next";
 import { useCallback, useState } from "react";
 import WalletRequired from "../../components/WalletRequired";
 import ProofProgress from "../../components/ProofProgress";

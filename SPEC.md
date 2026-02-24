@@ -5,7 +5,7 @@
 ## Overview
 A privacy-preserving application built on the Aztec network, designed specifically for AI agents.
 
-## Status: Phase 2 - Build (Sprint 3 COMPLETE — Sprint 4 prep done)
+## Status: Phase 2 - Build (Sprint 5 COMPLETE — Frontend MVP built, zero TypeScript errors, production build passes)
 
 ## Aztec v4 Toolchain (Installed Natively)
 - `nargo` v1.0.0-beta.18 — compiles Noir contracts natively (no Docker)
@@ -1751,11 +1751,17 @@ A Next.js 14 web application deployed at a TBD domain. Connects to a user's loca
 - [ ] `isnad.getCredentialForSkill(owner, keyId, authwitNonce): Promise<CredentialResult>`
 - [ ] Integration tests against live sandbox
 
-**Sprint 5: Frontend MVP** (2-3 sessions)
-- [ ] Skill Trust Browser (public, read-only)
-- [ ] Auditor Dashboard (connect wallet, submit attestation, view history)
-- [ ] Credential Vault (store, retrieve, delete, delegate)
-- [ ] UX for proof generation wait time (~15-30s progress indicator)
+**Sprint 5: Frontend MVP** (2-3 sessions) — COMPLETE (2026-02-24)
+- [x] Skill Trust Browser (public, read-only) — `frontend/app/page.tsx`, drag-drop file upload, example hashes, attestation history timeline
+- [x] Auditor Dashboard (connect wallet, submit attestation, view history) — `frontend/app/audit/page.tsx`, quality slider, revoke, history panel
+- [x] Credential Vault (store, retrieve, delete, delegate) — `frontend/app/vault/page.tsx`, reveal/copy/rotate/grant/delete per-card
+- [x] UX for proof generation wait time (~15-30s progress indicator) — `ProofProgress` component with elapsed timer, scanline animation, ZK privacy reminder
+- [x] Mock SDK (`frontend/lib/mock-sdk.ts`) — in-memory, simulated proof delays, seeded test data, identical interface to real SDK
+- [x] IsnadContext (`frontend/lib/isnad-context.tsx`) — wallet connection state, mock/real toggle via env var
+- [x] Shared components: Nav (sticky header + wallet button), TrustScore (score + bar + badge), WalletRequired (gate), ProofProgress (animated)
+- [x] Terminal/hacker aesthetic design system (Tailwind) — void/wire/ink/amber/signal palette, monospace throughout
+- [x] Production build passes, zero TypeScript errors
+- Activation path: set `NEXT_PUBLIC_USE_MOCK=false` + `NEXT_PUBLIC_PXE_URL` + `NEXT_PUBLIC_CONTRACT_ADDRESS` once Docker/GLIBC is resolved
 
 ---
 
