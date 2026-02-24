@@ -278,8 +278,8 @@ If a skill file changes by any amount, its hash changes and all prior attestatio
 
 | Network | Address |
 |---------|---------|
-| Aztec Devnet (v4.0.0-devnet.2-patch.0) | _TBD — pending deployment_ |
-| Local sandbox | Deploy with `scripts/activate-real-sdk.sh` |
+| Aztec Devnet (v4.0.0-devnet.2-patch.0) | `0x05d66323796566fe663f938f82df1dee62ac052693c666e858a132317004ddea` |
+| Local sandbox | Deploy with `aztec start --local-network` then `scripts/activate-real-sdk.sh` |
 
 ---
 
@@ -299,7 +299,7 @@ npm run build
 npm run test:integration
 ```
 
-All 40 tests pass without Docker (unit + flow tests simulate the complete ZK workflow in-memory).
+All 146 TypeScript tests pass without Docker (unit + flow tests simulate the complete ZK workflow in-memory). The Noir contract has 62/62 tests passing against live TXE.
 
 ---
 

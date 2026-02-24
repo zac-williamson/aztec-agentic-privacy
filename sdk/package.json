@@ -1,6 +1,6 @@
 {
   "name": "@nullius/isnad",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "ZK Skill Attestation and Credential Registry for AI agents — built on Aztec",
   "type": "module",
   "main": "./dist/index.js",
@@ -58,10 +58,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nullius-/isnad-chain"
+    "url": "https://github.com/zac-williamson/aztec-agentic-privacy"
   },
-  "homepage": "https://github.com/nullius-/isnad-chain#readme",
+  "homepage": "https://zac-williamson.github.io/aztec-agentic-privacy/",
   "bugs": {
-    "url": "https://github.com/nullius-/isnad-chain/issues"
+    "url": "https://github.com/zac-williamson/aztec-agentic-privacy/issues"
   }
 }

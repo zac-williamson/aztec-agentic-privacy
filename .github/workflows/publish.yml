@@ -1,0 +1,40 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'          # triggers on version tags: v0.3.0, v1.0.0, etc.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # for npm provenance attestation
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Install dependencies
+        run: cd sdk && npm ci
+
+      - name: Lint
+        run: cd sdk && npm run lint
+
+      - name: Test
+        run: cd sdk && npm test
+
+      - name: Build
+        run: cd sdk && npm run build
+
+      - name: Publish @nullius/isnad
+        run: cd sdk && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
