@@ -102,6 +102,10 @@ pub contract IsnadRegistry {
     fn attest(skill_hash: Field, quality: u8, claim_type: u8) {
         let auditor = self.context.maybe_msg_sender().unwrap();
 
+        // Validate inputs: quality must be 0-100, claim_type must be 0/1/2.
+        assert(quality <= 100, "quality must be in range 0-100");
+        assert(claim_type <= 2, "claim_type must be 0 (code_review), 1 (behavioral), or 2 (sandboxed_execution)");
+
         // Prevent double-attestation: derive a unique claim key per (auditor, skill).
         // poseidon2_hash is Aztec's standard hash for Field operations.
         let claim_key = poseidon2_hash([auditor.to_field(), skill_hash]);
@@ -272,11 +276,12 @@ pub contract IsnadRegistry {
     fn delete_credential(key_id: Field) {
         let owner = self.context.maybe_msg_sender().unwrap();
         // pop_notes atomically reads + nullifies the matching note.
-        let _ = self.storage.credentials.at(owner).at(owner).pop_notes(
+        let deleted = self.storage.credentials.at(owner).at(owner).pop_notes(
             NoteGetterOptions::new()
                 .select(CredentialNote::properties().key_id, Comparator.EQ, key_id)
                 .set_limit(1),
         );
+        assert(deleted.len() == 1, "No credential found for key_id -- nothing to delete");
     }
 
     /// Rotate (replace) a credential atomically in a single transaction.
@@ -292,12 +297,13 @@ pub contract IsnadRegistry {
     fn rotate_credential(key_id: Field, new_value: [Field; 4], label: Field) {
         let owner = self.context.maybe_msg_sender().unwrap();
 
-        // Nullify the old credential note (if present -- reverts if not found).
-        let _ = self.storage.credentials.at(owner).at(owner).pop_notes(
+        // Nullify the old credential note -- reverts if not found, ensuring atomicity.
+        let removed = self.storage.credentials.at(owner).at(owner).pop_notes(
             NoteGetterOptions::new()
                 .select(CredentialNote::properties().key_id, Comparator.EQ, key_id)
                 .set_limit(1),
         );
+        assert(removed.len() == 1, "No credential found for key_id -- cannot rotate a non-existent credential");
 
         // Insert the replacement credential note.
         let new_cred = CredentialNote { key_id, value: new_value, label, owner };
