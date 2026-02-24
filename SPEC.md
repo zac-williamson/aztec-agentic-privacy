@@ -1357,118 +1357,202 @@ The distinction matters because: (a) quarantine doesn't just subtract, it overri
 ### Contract 1: `IsnadRegistry`
 
 **File:** `contracts/isnad_registry/src/main.nr`
+**Version:** 0.2.0 (Phase 2 — Chain-of-Trust, Sprint 8)
+**Tests:** 53/53 passing against live TXE
+
+#### Chain-of-Trust Model
+
+Authorization is proven by **HOLDING a private `AuthCertNote`**, not by checking public state.
+An address proves Isnad chain membership by presenting its certificate in the ZK circuit.
+The certificate is committed to the note hash tree — its contents cannot be forged.
+
+Only the **contract admin** can create root certificates (depth=0) via `add_root_attestor()`.
+Any authorized attestor can vouch a new member via `vouch()`, which creates a cert at
+`(voucher_depth + 1)`. The admin check is enforced in the public phase, so non-admin calls
+revert atomically (the forged cert is discarded along with the transaction).
+
+The chain is **publicly visible** (`is_authorized`, `attestor_depth`) for external verification.
+The attestation **content** (what each person attested) remains **private**.
+
+#### Trust Score Weighting
+
+Attestor chain depth determines weighted contribution to a skill's trust score:
+
+| Depth | Role | Weight | effective_quality |
+|-------|------|--------|-------------------|
+| 0 | Root attestor (added by admin) | 4× | quality × 4 |
+| 1 | Vouched by root | 3× | quality × 3 |
+| 2 | Vouched by depth-1 | 2× | quality × 2 |
+| 3+ | Deep chain members | 1× | quality × 1 |
+
+The `depth_at_attestation` field in `AttestationNote` records the depth at time of attestation,
+ensuring revocation decrements the exact original effective_quality (even if depths change later).
 
 #### Storage
 
 ```rust
 #[storage]
-struct Storage {
-    // Public: aggregated trust data per skill (skill_hash → value)
-    trust_scores: Map<Field, PublicMutable<u64>>,
-    attestation_counts: Map<Field, PublicMutable<u64>>,
+struct Storage<Context> {
+    // Public: who can add root attestors
+    admin: PublicMutable<AztecAddress, Context>,
+
+    // Private: authorization certificates for each Isnad chain member
+    // Non-nullifiable: get_notes reads them without consuming
+    auth_certs: Map<AztecAddress, Owned<PrivateSet<AuthCertNote, Context>, Context>, Context>,
+
+    // Public: whether an address is an authorized attestor
+    is_authorized: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
+
+    // Public: vouching chain depth per authorized attestor (0 = root)
+    attestor_depth: Map<AztecAddress, PublicMutable<u8, Context>, Context>,
+
+    // Public: aggregated weighted trust data per skill hash
+    trust_scores: Map<Field, PublicMutable<u64, Context>, Context>,
+    attestation_counts: Map<Field, PublicMutable<u64, Context>, Context>,
 
     // Private: each auditor's personal attestation history
-    attestations: Map<AztecAddress, PrivateSet<AttestationNote>>,
+    attestations: Map<AztecAddress, Owned<PrivateSet<AttestationNote, Context>, Context>, Context>,
+
+    // Anti-double-attestation: each (auditor, skill_hash) pair can claim exactly once
+    attest_claims: Map<Field, Owned<SingleUseClaim<Context>, Context>, Context>,
 
     // Private: each agent's credential vault
-    credentials: Map<AztecAddress, PrivateSet<CredentialNote>>,
+    credentials: Map<AztecAddress, Owned<PrivateSet<CredentialNote, Context>, Context>, Context>,
 }
 ```
 
 #### Functions
 
 ```rust
+// ─── CONSTRUCTOR ─────────────────────────────────────────────────────
+
+// Public initializer: set the admin address
+#[external("public")] #[initializer]
+fn constructor(admin: AztecAddress)
+
+
+// ─── CHAIN-OF-TRUST MANAGEMENT ───────────────────────────────────────
+
+// Private: create root AuthCertNote (depth=0) for new_attestor
+// Admin check enforced in public phase; non-admin calls revert atomically
+#[external("private")]
+fn add_root_attestor(new_attestor: AztecAddress)
+
+// Public/only_self: verify admin and register root attestor publicly
+#[external("public")] #[only_self]
+fn _verify_and_register_root(caller: AztecAddress, new_attestor: AztecAddress)
+
+// Private: prove auth via AuthCertNote, create cert at depth+1 for new_attestor
+#[external("private")]
+fn vouch(new_attestor: AztecAddress)
+
+// Public/only_self: register vouched attestor in public registry
+#[external("public")] #[only_self]
+fn _register_vouched(new_attestor: AztecAddress, depth: u8)
+
+// Public view: check if address is an authorized attestor
+#[external("public")] #[view]
+fn is_authorized_attestor(addr: AztecAddress) -> bool
+
+// Public view: get chain depth (0 = root; 0 also for unauthorized — use is_authorized first)
+#[external("public")] #[view]
+fn get_attestor_depth(addr: AztecAddress) -> u8
+
+
 // ─── ATTESTATION FUNCTIONS ───────────────────────────────────────────
 
-// Private: submit an attestation for a skill
-// Creates an AttestationNote, enqueues public score increment
-// Auditor identity and claim_type never appear in public state
-#[aztec(private)]
-fn attest(skill_hash: Field, quality: u8, claim_type: u8) -> Field
+// Private: prove auth via AuthCertNote, submit weighted attestation
+// quality=0-100, claim_type=0-2; uses SingleUseClaim for anti-double-attest
+#[external("private")]
+fn attest(skill_hash: Field, quality: u8, claim_type: u8)
 
-// Private: revoke a prior attestation
-// Nullifies the AttestationNote, enqueues public score decrement
-// Prevents double-revocation via nullifier
-#[aztec(private)]
-fn revoke_attestation(skill_hash: Field, attestation_nonce: Field)
+// Private: nullify AttestationNote, decrement score by stored effective_quality
+#[external("private")]
+fn revoke_attestation(skill_hash: Field)
 
-// Public internal: called by attest(), increments trust score
-// Only callable by this contract (internal modifier)
-#[aztec(public)]
-#[aztec(internal)]
-fn _increment_score(skill_hash: Field, quality: u64)
+// Public/only_self: increment weighted trust score
+#[external("public")] #[only_self]
+fn _increment_score(skill_hash: Field, effective_quality: u64)
 
-// Public internal: called by revoke_attestation(), decrements score
-#[aztec(public)]
-#[aztec(internal)]
-fn _decrement_score(skill_hash: Field, quality: u64)
+// Public/only_self: decrement trust score (safe: floor at 0)
+#[external("public")] #[only_self]
+fn _decrement_score(skill_hash: Field, effective_quality: u64)
 
-// Public view: get trust score for a skill (no auth needed)
-#[aztec(public)]
-#[aztec(view)]
+// Public view: get aggregate weighted trust score for a skill
+#[external("public")] #[view]
 fn get_trust_score(skill_hash: Field) -> u64
 
-// Public view: get number of unique attestors for a skill
-#[aztec(public)]
-#[aztec(view)]
+// Public view: get number of unique authorized auditors who attested a skill
+#[external("public")] #[view]
 fn get_attestation_count(skill_hash: Field) -> u64
 
 
 // ─── CREDENTIAL VAULT FUNCTIONS ──────────────────────────────────────
 
 // Private: store a credential as a private note
-// Only the owner can retrieve it (or AuthWit delegates)
-#[aztec(private)]
-fn store_credential(key_id: Field, encrypted_value: [u8; 256], label: Field)
+#[external("private")]
+fn store_credential(key_id: Field, value: [Field; 4], label: Field)
 
-// Private: retrieve a credential
-// Owner can call directly; delegates must present AuthWit
-#[aztec(private)]
-fn get_credential(key_id: Field) -> [u8; 256]
+// Utility (unconstrained): retrieve a credential for the owner's PXE
+unconstrained fn get_credential(owner: AztecAddress, key_id: Field) -> Option<[Field; 4]>
 
-// Private: delete a credential (nullify the note)
-#[aztec(private)]
+// Private: retrieve a credential on behalf of owner (AuthWit delegation)
+#[authorize_once("owner", "authwit_nonce")] #[external("private")]
+fn get_credential_for_skill(owner: AztecAddress, key_id: Field, authwit_nonce: Field) -> [Field; 4]
+
+// Private: nullify a credential note
+#[external("private")]
 fn delete_credential(key_id: Field)
 
-// Private: update a credential (nullify old note, create new one)
-// Used for credential rotation
-#[aztec(private)]
-fn rotate_credential(key_id: Field, new_encrypted_value: [u8; 256])
+// Private: atomically replace a credential (nullify old, insert new)
+#[external("private")]
+fn rotate_credential(key_id: Field, new_value: [Field; 4], label: Field)
 ```
 
 #### Note Types
 
-**`AttestationNote`** (file: `contracts/isnad_registry/src/types/attestation_note.nr`)
+**`AttestationNote`** (file: `contracts/isnad_registry/src/attestation_note.nr`)
 
 ```rust
+#[derive(Eq, Packable)]
+#[note]
 struct AttestationNote {
-    skill_hash: Field,      // hash of skill content or identifier
-    quality: u8,            // attestor's quality score: 0-100
-    claim_type: u8,         // attestation methodology: 0=code_review, 1=behavioral, 2=sandboxed_execution
-    timestamp: u64,         // block timestamp at attestation
-    nonce: Field,           // unique per note, prevents correlation
-    owner: AztecAddress,    // the attesting agent (for PXE decryption)
-    header: NoteHeader,     // Aztec standard: nonce, contract, slot
+    skill_hash: Field,            // SHA256(skill_content) truncated to BN254 field
+    quality: u8,                  // attestor's quality score: 0-100
+    claim_type: u8,               // 0=code_review, 1=behavioral, 2=sandboxed_execution
+    depth_at_attestation: u8,     // chain depth at time of attestation (for accurate revocation)
+    owner: AztecAddress,          // the attesting auditor (for PXE decryption)
 }
-
-// Nullifier: hash(skill_hash, nonce, owner_secret_key)
-// This ties the nullifier to the specific attestation without revealing it
-// claim_type is stored privately — never appears in public state
+// claim_type and depth are stored privately — never appear in public state
 ```
 
-**`CredentialNote`** (file: `contracts/isnad_registry/src/types/credential_note.nr`)
+**`AuthCertNote`** (file: `contracts/isnad_registry/src/auth_cert_note.nr`)
 
 ```rust
-struct CredentialNote {
-    key_id: Field,              // application-defined identifier (e.g., hash("openai-key"))
-    encrypted_value: [u8; 256], // the secret, AES-encrypted before storing
-    label: Field,               // human-readable description, also a Field
-    owner: AztecAddress,        // the owning agent
-    nonce: Field,               // unique per note
-    header: NoteHeader,
+#[derive(Eq, Packable)]
+#[note]
+struct AuthCertNote {
+    depth: u8,           // chain depth: 0=root, 1=vouched by root, N=vouched by depth N-1
+    owner: AztecAddress, // the authorized attestor (for PXE decryption)
 }
+// Authorization IS the note: holding this note proves Isnad chain membership.
+// Read via get_notes (NOT pop_notes) — non-nullifiable, persists across attestations.
+// Created by add_root_attestor() (depth=0) or vouch() (depth=voucher+1).
+// Admin check is deferred to _verify_and_register_root() in the public phase:
+//   if caller != admin, the ENTIRE tx reverts, atomically discarding the forged cert.
+```
 
-// Nullifier: hash(key_id, nonce, owner_secret_key)
+**`CredentialNote`** (file: `contracts/isnad_registry/src/credential_note.nr`)
+
+```rust
+#[derive(Eq, Packable)]
+#[note]
+struct CredentialNote {
+    key_id: Field,          // identifier (hash of string key, e.g. "openai-api-key")
+    value: [Field; 4],      // the secret packed as 4 Fields = 128 bytes max
+    label: Field,           // human-readable name packed as Field (up to 31 ASCII bytes)
+    owner: AztecAddress,    // the owning agent (for PXE decryption)
+}
 // Deleting a credential emits its nullifier — the note is "spent"
 ```
 
