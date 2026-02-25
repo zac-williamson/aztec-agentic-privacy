@@ -1,26 +1,15 @@
 {
   "network": "local",
-  "contractAddress": "0x05d66323796566fe663f938f82df1dee62ac052693c666e858a132317004ddea",
+  "contractAddress": "0x127bfb034e149e8ce44b0036833a0bb1ab230930a7ea814fea7eac1a4bcb2747",
   "deployerAddress": "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72",
-  "txHash": "0x11ba4aee35e54b3c93bbb260fa5ecfe22e4fe727531a993fb87dc0095ac85bf4",
-  "blockNumber": 5,
   "pxeUrl": "http://localhost:8080",
-  "deployedAt": "2026-02-24T20:10:35Z",
-  "contractClass": "0x1a554feacb974039d264f5348df5ef62994766f30fc1bde062d698ce4556793b",
+  "deployedAt": "2026-02-25T00:15:51.896Z",
   "aztecVersion": "4.0.0-devnet.2-patch.0",
+  "contractVersion": "0.3.0",
+  "sponsoredFPC": "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2",
   "testAccounts": {
     "test0": {
-      "address": "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72",
-      "secretKey": "0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281"
-    },
-    "test1": {
-      "address": "0x1b755492d6dd51deb08b7e51a33133186687ea13527f07921fd74640dc8dec24",
-      "secretKey": "0x0aebd1b4be76efa44f5ee655c20bf9ea60f7ae44b9a7fd1fd9f189c7a0b0cdae"
-    },
-    "test2": {
-      "address": "0x17d474561f3cc64c896779fad1220017139791d250cff95370d239656c4aaeae",
-      "secretKey": "0x0f6addf0da06c33293df974a565b03d1ab096090d907d98055a8b7f4954e120c"
+      "address": "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
     }
-  },
-  "sponsoredFPC": "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
+  }
 }
