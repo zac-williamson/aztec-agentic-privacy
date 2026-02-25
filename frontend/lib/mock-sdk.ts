@@ -116,9 +116,23 @@ function createInitialState(walletAddress: string): MockState {
     });
   }
 
+  // Seed one pre-existing attestation to the quarantined skill so the dashboard
+  // immediately demonstrates the quarantine warning in the attestation history.
+  const now = Date.now();
+  const myAttestations: LocalAttestation[] = [
+    {
+      skillHash: "0xdeadbeefcafebabe0102030405060708090a0b0c0d0e0f101112131415161718",
+      quality: 61,
+      claimType: 0, // code_review
+      timestamp: new Date(now - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+      txHash: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+      revoked: false,
+    },
+  ];
+
   return {
     trustScores,
-    myAttestations: [],
+    myAttestations,
     credentials: new Map(),
     walletAddress,
   };

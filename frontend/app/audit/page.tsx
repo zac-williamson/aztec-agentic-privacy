@@ -11,11 +11,11 @@
  *   5. Revoke attestations they no longer stand behind
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import WalletRequired from "../../components/WalletRequired";
 import ProofProgress from "../../components/ProofProgress";
 import { useIsnad } from "../../lib/isnad-context";
-import type { LocalAttestation } from "../../lib/types";
+import type { LocalAttestation, SkillTrustInfo } from "../../lib/types";
 import { computeSkillHashFromFile } from "../../lib/mock-sdk";
 
 // ─── ATTEST FORM ─────────────────────────────────────────────────────────────
@@ -30,6 +30,7 @@ function AttestForm() {
   const [phase, setPhase] = useState<"idle" | "proving" | "submitting" | "done" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [errorMsg, setErrorMsg] = useState<string | undefined>();
+  const [quarantineInfo, setQuarantineInfo] = useState<SkillTrustInfo | null>(null);
 
   const handleFile = useCallback(async (file: File) => {
     const hash = await computeSkillHashFromFile(file);
@@ -76,10 +77,25 @@ function AttestForm() {
     setErrorMsg(undefined);
   }, []);
 
+  // Check quarantine status whenever the skill hash changes
+  useEffect(() => {
+    const hash = skillHash.trim();
+    if (!sdk || !hash || !/^0x[0-9a-fA-F]{1,64}$/.test(hash)) {
+      setQuarantineInfo(null);
+      return;
+    }
+    let cancelled = false;
+    sdk.getTrustScore(hash).then((info) => {
+      if (!cancelled) setQuarantineInfo(info);
+    }).catch(() => { /* ignore errors — quarantine check is advisory */ });
+    return () => { cancelled = true; };
+  }, [sdk, skillHash]);
+
   const isSubmitting = phase === "proving" || phase === "submitting";
   const alreadyAttested = myAttestations.some(
     (a) => a.skillHash.toLowerCase() === skillHash.toLowerCase().trim() && !a.revoked,
   );
+  const isQuarantined = quarantineInfo?.isQuarantined === true;
 
   const qualityLabel = quality >= 80 ? "Trusted" : quality >= 50 ? "Cautious" : "Risky";
   const qualityColor = quality >= 80 ? "text-signal-trusted" : quality >= 50 ? "text-signal-caution" : "text-signal-danger";
@@ -140,6 +156,21 @@ function AttestForm() {
             <p className="font-mono text-xs text-signal-caution">
               ⚠ You have already attested this skill. Double-attestation is prevented by ZK nullifier.
             </p>
+          )}
+
+          {isQuarantined && (
+            <div className="flex items-start gap-3 px-4 py-3 rounded border border-signal-danger bg-signal-danger/5">
+              <span className="font-mono text-signal-danger text-lg leading-none shrink-0 mt-0.5">⚠</span>
+              <div className="space-y-1">
+                <div className="font-mono text-sm font-bold text-signal-danger uppercase tracking-wider">
+                  Quarantined — Do Not Attest
+                </div>
+                <p className="font-mono text-xs text-signal-danger/80 leading-relaxed">
+                  This skill has been flagged as known-malicious by the registry admin. Attestation
+                  is blocked. If you believe this is a false positive, contact the admin before proceeding.
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
@@ -219,7 +250,7 @@ function AttestForm() {
         {phase !== "done" && (
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !skillHash.trim() || alreadyAttested}
+            disabled={isSubmitting || !skillHash.trim() || alreadyAttested || isQuarantined}
             className="
               w-full py-2.5 rounded border border-amber/50 text-amber font-mono text-sm
               hover:bg-amber/5 hover:border-amber transition-colors
@@ -254,6 +285,8 @@ function AttestationHistory() {
   const [revokePhase, setRevokePhase] = useState<"idle" | "proving" | "submitting" | "done" | "error">("idle");
   const [revokeTxHash, setRevokeTxHash] = useState<string | undefined>();
   const [revokeError, setRevokeError] = useState<string | undefined>();
+  // Maps skillHash (lowercase) → whether it is currently quarantined
+  const [quarantineMap, setQuarantineMap] = useState<Map<string, boolean>>(new Map());
 
   const handleRevoke = useCallback(
     async (attestation: LocalAttestation) => {
@@ -282,6 +315,23 @@ function AttestationHistory() {
     },
     [sdk, refreshAttestations],
   );
+
+  // Batch-fetch quarantine status for all active attestations
+  useEffect(() => {
+    if (!sdk) return;
+    const activeHashes = myAttestations
+      .filter((a) => !a.revoked)
+      .map((a) => a.skillHash.toLowerCase());
+    if (activeHashes.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(
+      activeHashes.map((h) => sdk.getTrustScore(h).then((info) => [h, info.isQuarantined ?? false] as const))
+    ).then((entries) => {
+      if (!cancelled) setQuarantineMap(new Map(entries));
+    }).catch(() => { /* advisory check — ignore errors */ });
+    return () => { cancelled = true; };
+  }, [sdk, myAttestations]);
 
   const active = myAttestations.filter((a) => !a.revoked);
   const revoked = myAttestations.filter((a) => a.revoked);
@@ -312,13 +362,21 @@ function AttestationHistory() {
             : att.claimType === 2
             ? "🔒 sandboxed"
             : "📄 static";
+          const isAttQuarantined = quarantineMap.get(att.skillHash.toLowerCase()) === true;
 
           return (
-            <div key={att.txHash} className="p-4 space-y-3">
+            <div key={att.txHash} className={`p-4 space-y-3 ${isAttQuarantined ? "bg-signal-danger/5" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1 min-w-0">
-                  <div className="font-mono text-xs text-ink break-all">
-                    {att.skillHash.slice(0, 20)}...{att.skillHash.slice(-8)}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs text-ink break-all">
+                      {att.skillHash.slice(0, 20)}...{att.skillHash.slice(-8)}
+                    </span>
+                    {isAttQuarantined && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-xs font-bold bg-signal-danger text-void uppercase tracking-wider shrink-0">
+                        ⚠ quarantined
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-xs text-ink-muted">
@@ -327,15 +385,24 @@ function AttestationHistory() {
                     <span className="font-mono text-xs text-ink-faint">{claimTypeLabel}</span>
                     <span className="font-mono text-xs text-ink-faint">{timeLabel}</span>
                   </div>
+                  {isAttQuarantined && (
+                    <p className="font-mono text-xs text-signal-danger/80 leading-relaxed">
+                      This skill was quarantined after your attestation. Consider revoking to preserve
+                      your auditor reputation integrity.
+                    </p>
+                  )}
                 </div>
 
                 {!isRevokingThis && (
                   <button
                     onClick={() => handleRevoke(att)}
-                    className="
-                      shrink-0 px-3 py-1 rounded border border-wire text-xs font-mono text-ink-muted
-                      hover:border-signal-danger hover:text-signal-danger transition-colors
-                    "
+                    className={`
+                      shrink-0 px-3 py-1 rounded border text-xs font-mono transition-colors
+                      ${isAttQuarantined
+                        ? "border-signal-danger text-signal-danger hover:bg-signal-danger/10"
+                        : "border-wire text-ink-muted hover:border-signal-danger hover:text-signal-danger"
+                      }
+                    `}
                   >
                     Revoke
                   </button>
@@ -360,14 +427,20 @@ function AttestationHistory() {
                 {revoked.length} revoked attestation{revoked.length > 1 ? "s" : ""}
               </summary>
               <div className="mt-3 space-y-2">
-                {revoked.map((att) => (
-                  <div key={att.txHash} className="flex items-center gap-3 opacity-50">
-                    <span className="font-mono text-xs text-ink-muted line-through break-all">
-                      {att.skillHash.slice(0, 20)}...
-                    </span>
-                    <span className="font-mono text-xs text-signal-danger">revoked</span>
-                  </div>
-                ))}
+                {revoked.map((att) => {
+                  const isRevokedQuarantined = quarantineMap.get(att.skillHash.toLowerCase()) === true;
+                  return (
+                    <div key={att.txHash} className="flex items-center gap-3 opacity-60">
+                      <span className="font-mono text-xs text-ink-muted line-through break-all">
+                        {att.skillHash.slice(0, 20)}...
+                      </span>
+                      <span className="font-mono text-xs text-signal-danger">revoked</span>
+                      {isRevokedQuarantined && (
+                        <span className="font-mono text-xs font-bold text-signal-danger">⚠ now quarantined</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </details>
           </div>
