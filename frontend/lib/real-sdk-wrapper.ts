@@ -19,6 +19,7 @@
  */
 
 import type {
+  AttestationEvent,
   AttestOptions,
   CredentialResult,
   GrantAccessOptions,
@@ -139,16 +140,23 @@ export class RealSdkWrapper implements IsnadSdkLike {
     return this.sdk.getTrustScore(skillHash);
   }
 
-  async getAttestationHistory(
-    _skillHash: string,
-  ): Promise<Array<{ quality: number; ts: Date }>> {
+  async getAttestationHistory(_skillHash: string): Promise<AttestationEvent[]> {
     // The contract stores aggregate scores, not individual attestation timestamps.
     // A v2 indexer could reconstruct this from on-chain events.
     // For now, return the locally tracked history for this session.
     const key = _skillHash.toLowerCase();
     return this._myAttestations
-      .filter((a) => a.skillHash.toLowerCase() === key && !a.revoked)
-      .map((a) => ({ quality: a.quality, ts: a.timestamp }));
+      .map((a) => ({
+        quality: a.quality,
+        ts: a.timestamp,
+        type: (a.revoked ? "revoke" : "attest") as "attest" | "revoke",
+      }))
+      .filter((e) => {
+        const match = this._myAttestations.find(
+          (a) => a.skillHash.toLowerCase() === key && a.timestamp === e.ts,
+        );
+        return !!match;
+      });
   }
 
   // ─── ATTESTATION ────────────────────────────────────────────────────────────

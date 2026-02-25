@@ -15,6 +15,7 @@
 
 import type {
   AttestOptions,
+  AttestationEvent,
   CredentialResult,
   GrantAccessOptions,
   LocalAttestation,
@@ -30,40 +31,51 @@ const SEED_SKILLS: Array<{
   hash: string;
   score: bigint;
   count: bigint;
-  history: Array<{ quality: number; daysAgo: number }>;
+  isQuarantined: boolean;
+  history: Array<{ quality: number; daysAgo: number; type: "attest" | "revoke" }>;
 }> = [
   {
     hash: "0x7f3ac4b82d19e8a1f5b6c3d4e9f2a0b7c8d5e6f1a2b3c4d5e6f7a8b9c0d1e2f",
     score: 847n,
     count: 9n,
+    isQuarantined: false,
     history: [
-      { quality: 95, daysAgo: 2 },
-      { quality: 88, daysAgo: 3 },
-      { quality: 92, daysAgo: 5 },
-      { quality: 78, daysAgo: 7 },
-      { quality: 100, daysAgo: 9 },
-      { quality: 85, daysAgo: 12 },
-      { quality: 90, daysAgo: 15 },
-      { quality: 72, daysAgo: 18 },
-      { quality: 47, daysAgo: 21 },
+      { quality: 95, daysAgo: 2, type: "attest" },
+      { quality: 88, daysAgo: 3, type: "attest" },
+      { quality: 92, daysAgo: 5, type: "attest" },
+      { quality: 78, daysAgo: 7, type: "attest" },
+      { quality: 100, daysAgo: 9, type: "attest" },
+      { quality: 85, daysAgo: 12, type: "attest" },
+      { quality: 90, daysAgo: 15, type: "attest" },
+      // One revoked attestation — auditor retracted their endorsement
+      { quality: 72, daysAgo: 17, type: "revoke" },
+      { quality: 72, daysAgo: 18, type: "attest" },
+      { quality: 47, daysAgo: 21, type: "attest" },
     ],
   },
   {
     hash: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
     score: 312n,
     count: 4n,
+    isQuarantined: false,
     history: [
-      { quality: 88, daysAgo: 1 },
-      { quality: 75, daysAgo: 4 },
-      { quality: 82, daysAgo: 6 },
-      { quality: 67, daysAgo: 10 },
+      { quality: 88, daysAgo: 1, type: "attest" },
+      { quality: 75, daysAgo: 4, type: "attest" },
+      { quality: 82, daysAgo: 6, type: "attest" },
+      { quality: 67, daysAgo: 10, type: "attest" },
     ],
   },
   {
+    // get-weather (MALICIOUS): quarantined by admin after P0 Labs disclosure.
+    // 2 suspicious attestations on record (likely Sybil). Score suppressed to 0.
     hash: "0xdeadbeefcafebabe0102030405060708090a0b0c0d0e0f101112131415161718",
     score: 0n,
-    count: 0n,
-    history: [],
+    count: 2n,
+    isQuarantined: true,
+    history: [
+      { quality: 61, daysAgo: 3, type: "attest" },
+      { quality: 58, daysAgo: 4, type: "attest" },
+    ],
   },
 ];
 
@@ -71,23 +83,35 @@ const SEED_SKILLS: Array<{
 
 /** In-memory state (resets on page reload) */
 interface MockState {
-  trustScores: Map<string, { score: bigint; count: bigint; history: Array<{ quality: number; ts: Date }> }>;
+  trustScores: Map<string, {
+    score: bigint;
+    count: bigint;
+    isQuarantined: boolean;
+    history: AttestationEvent[];
+  }>;
   myAttestations: LocalAttestation[];
   credentials: Map<string, { label: string; value: string }>;
   walletAddress: string;
 }
 
 function createInitialState(walletAddress: string): MockState {
-  const trustScores = new Map<string, { score: bigint; count: bigint; history: Array<{ quality: number; ts: Date }> }>();
+  const trustScores = new Map<string, {
+    score: bigint;
+    count: bigint;
+    isQuarantined: boolean;
+    history: AttestationEvent[];
+  }>();
 
   for (const seed of SEED_SKILLS) {
     const now = Date.now();
     trustScores.set(seed.hash.toLowerCase(), {
       score: seed.score,
       count: seed.count,
-      history: seed.history.map(({ quality, daysAgo }) => ({
+      isQuarantined: seed.isQuarantined,
+      history: seed.history.map(({ quality, daysAgo, type }) => ({
         quality,
         ts: new Date(now - daysAgo * 24 * 60 * 60 * 1000),
+        type,
       })),
     });
   }
@@ -157,12 +181,11 @@ export class MockIsnadSDK {
       skillHash,
       trustScore: data?.score ?? 0n,
       attestationCount: data?.count ?? 0n,
+      isQuarantined: data?.isQuarantined ?? false,
     };
   }
 
-  async getAttestationHistory(
-    skillHash: string,
-  ): Promise<Array<{ quality: number; ts: Date }>> {
+  async getAttestationHistory(skillHash: string): Promise<AttestationEvent[]> {
     await readDelay();
     const key = skillHash.toLowerCase();
     const data = this.state.trustScores.get(key);
@@ -197,11 +220,12 @@ export class MockIsnadSDK {
     const now = new Date();
 
     // Update trust score
-    const existing = this.state.trustScores.get(key) ?? { score: 0n, count: 0n, history: [] };
+    const existing = this.state.trustScores.get(key) ?? { score: 0n, count: 0n, isQuarantined: false, history: [] };
     this.state.trustScores.set(key, {
       score: existing.score + BigInt(opts.quality),
       count: existing.count + 1n,
-      history: [{ quality: opts.quality, ts: now }, ...existing.history],
+      isQuarantined: existing.isQuarantined,
+      history: [{ quality: opts.quality, ts: now, type: "attest" as const }, ...existing.history],
     });
 
     // Record local attestation
@@ -237,13 +261,17 @@ export class MockIsnadSDK {
 
     const txHash = makeTxHash();
 
-    // Decrement trust score
+    // Decrement trust score and append a revocation event to the timeline
     const existing = this.state.trustScores.get(key);
     if (existing) {
       this.state.trustScores.set(key, {
         score: existing.score >= BigInt(attestation.quality) ? existing.score - BigInt(attestation.quality) : 0n,
         count: existing.count > 0n ? existing.count - 1n : 0n,
-        history: existing.history.filter((h) => h.ts !== attestation.timestamp),
+        isQuarantined: existing.isQuarantined,
+        history: [
+          { quality: attestation.quality, ts: new Date(), type: "revoke" as const },
+          ...existing.history,
+        ],
       });
     }
 

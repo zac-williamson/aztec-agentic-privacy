@@ -7,6 +7,14 @@ export interface SkillTrustInfo {
   skillHash: string;
   trustScore: bigint;
   attestationCount: bigint;
+  isQuarantined?: boolean;
+}
+
+/** A single event in the attestation timeline. */
+export interface AttestationEvent {
+  quality: number;
+  ts: Date;
+  type: "attest" | "revoke";
 }
 
 export interface AttestOptions {
@@ -47,7 +55,7 @@ export interface IsnadSdkLike {
 
   // Trust reads (no wallet required in mock; uses PXE in real mode)
   getTrustScore(skillHash: string): Promise<SkillTrustInfo>;
-  getAttestationHistory(skillHash: string): Promise<Array<{ quality: number; ts: Date }>>;
+  getAttestationHistory(skillHash: string): Promise<AttestationEvent[]>;
 
   // Attestation writes
   attest(
@@ -94,10 +102,12 @@ export interface LocalAttestation {
 
 /**
  * Trust level classification based on score thresholds.
+ * "quarantined" overrides all others — admin has flagged this skill as known-malicious.
  */
-export type TrustLevel = "none" | "low" | "moderate" | "trusted";
+export type TrustLevel = "none" | "low" | "moderate" | "trusted" | "quarantined";
 
-export function classifyTrust(score: bigint, count: bigint): TrustLevel {
+export function classifyTrust(score: bigint, count: bigint, isQuarantined?: boolean): TrustLevel {
+  if (isQuarantined) return "quarantined";
   if (count === 0n) return "none";
   if (score < 300n) return "low";
   if (score < 700n) return "moderate";
@@ -128,5 +138,11 @@ export const TRUST_LEVEL_CONFIG = {
     color: "text-signal-trusted",
     barColor: "bg-signal-trusted",
     badge: "bg-signal-trusted/10 text-signal-trusted border border-signal-trusted/30",
+  },
+  quarantined: {
+    label: "QUARANTINED",
+    color: "text-signal-danger",
+    barColor: "bg-signal-danger",
+    badge: "bg-signal-danger text-void font-bold",
   },
 } as const;

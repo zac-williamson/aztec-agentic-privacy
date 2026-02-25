@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import TrustScore, { AttestHistoryItem } from "../components/TrustScore";
 import { MockIsnadSDK, computeSkillHashFromFile } from "../lib/mock-sdk";
-import type { IsnadSdkLike, SkillTrustInfo } from "../lib/types";
+import type { AttestationEvent, IsnadSdkLike, SkillTrustInfo } from "../lib/types";
 import { config } from "../lib/config";
 import Link from "next/link";
 
@@ -19,17 +19,17 @@ const EXAMPLE_HASHES = [
   {
     label: "weather-reporter-v2",
     hash: "0x7f3ac4b82d19e8a1f5b6c3d4e9f2a0b7c8d5e6f1a2b3c4d5e6f7a8b9c0d1e2f",
-    trusted: true,
+    status: "trusted" as const,
   },
   {
     label: "code-formatter-v1",
     hash: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
-    trusted: true,
+    status: "trusted" as const,
   },
   {
-    label: "get-weather (MALICIOUS — see P0 Labs report)",
+    label: "get-weather (P0 Labs — QUARANTINED)",
     hash: "0xdeadbeefcafebabe0102030405060708090a0b0c0d0e0f101112131415161718",
-    trusted: false,
+    status: "quarantined" as const,
   },
 ];
 
@@ -57,7 +57,7 @@ export default function TrustBrowserPage() {
   const [inputHash, setInputHash] = useState("");
   const [searchHash, setSearchHash] = useState<string | null>(null);
   const [trustInfo, setTrustInfo] = useState<SkillTrustInfo | null>(null);
-  const [history, setHistory] = useState<Array<{ quality: number; ts: Date }>>([]);
+  const [history, setHistory] = useState<AttestationEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -261,7 +261,7 @@ export default function TrustBrowserPage() {
       <div className="space-y-2">
         <p className="font-mono text-xs text-ink-faint">Example skills (demo data):</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {EXAMPLE_HASHES.map(({ label, hash, trusted }) => (
+          {EXAMPLE_HASHES.map(({ label, hash, status }) => (
             <button
               key={hash}
               onClick={() => { setInputHash(hash); doSearch(hash); }}
@@ -276,8 +276,12 @@ export default function TrustBrowserPage() {
               <div className="font-mono text-xs text-ink-faint truncate mt-0.5">
                 {hash.slice(0, 18)}...
               </div>
-              <div className={`mt-1.5 font-mono text-xs ${trusted ? "text-signal-trusted" : "text-signal-danger"}`}>
-                {trusted ? "● trusted" : "● not attested"}
+              <div className={`mt-1.5 font-mono text-xs ${
+                status === "trusted"
+                  ? "text-signal-trusted"
+                  : "text-signal-danger font-bold"
+              }`}>
+                {status === "trusted" ? "● trusted" : "⚠ quarantined"}
               </div>
             </button>
           ))}
@@ -315,20 +319,30 @@ export default function TrustBrowserPage() {
               {/* Trust score */}
               <TrustScore info={trustInfo} size="lg" />
 
-              {/* Attestation history */}
+              {/* Attestation / revocation history */}
               {history.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <h3 className="font-mono text-xs text-ink-muted uppercase tracking-widest">
                       Attestation History
                     </h3>
-                    <span className="font-mono text-xs text-ink-faint">
-                      no auditor identities recorded
-                    </span>
+                    <div className="flex items-center gap-4 font-mono text-xs text-ink-faint">
+                      <span>
+                        <span className="text-signal-trusted">+</span>{" "}
+                        {history.filter((e) => e.type === "attest").length} attestation{history.filter((e) => e.type === "attest").length !== 1 ? "s" : ""}
+                      </span>
+                      {history.some((e) => e.type === "revoke") && (
+                        <span>
+                          <span className="text-signal-danger">✕</span>{" "}
+                          {history.filter((e) => e.type === "revoke").length} revocation{history.filter((e) => e.type === "revoke").length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      <span>no auditor identities recorded</span>
+                    </div>
                   </div>
                   <div>
-                    {history.map((item, i) => (
-                      <AttestHistoryItem key={i} quality={item.quality} ts={item.ts} />
+                    {history.map((event, i) => (
+                      <AttestHistoryItem key={i} event={event} />
                     ))}
                   </div>
                 </div>
