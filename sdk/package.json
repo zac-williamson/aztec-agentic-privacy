@@ -22,7 +22,7 @@
   },
   "scripts": {
     "gen-artifacts": "node scripts/gen-artifacts.js",
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup src/index.ts --format esm --dts --external @aztec/aztec.js --external @aztec/accounts --external @aztec/stdlib",
     "prepublishOnly": "npm run lint && npm test && npm run build",
     "test": "vitest run",
     "test:integration": "vitest run tests/sdk.integration.test.ts",
