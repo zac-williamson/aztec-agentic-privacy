@@ -8,12 +8,17 @@ import type {
   CredentialResult,
   DelegatedCredentialOptions,
   GrantAccessOptions,
+  InstallPolicyOptions,
   InstallVerdict,
   RotateCredentialOptions,
   SkillTrustInfo,
   StoreCredentialOptions,
 } from "./types.js";
-import { ClaimType, INSTALL_THRESHOLD_COUNT, INSTALL_THRESHOLD_SCORE } from "./types.js";
+import {
+  ClaimType,
+  INSTALL_THRESHOLD_COUNT,
+  INSTALL_THRESHOLD_SCORE,
+} from "./types.js";
 import { IsnadRegistryContract } from "./artifacts/IsnadRegistry.js";
 
 /**
@@ -414,29 +419,45 @@ export class IsnadSDK {
   }
 
   /**
-   * Apply the default install policy to a SkillTrustInfo result.
+   * Apply an install policy to a SkillTrustInfo result.
    *
-   * Policy (from Q1 community discussion):
+   * Verdicts:
    *   deny    — skill is quarantined (KNOWN MALICIOUS) or has zero attestations
-   *   sandbox — has attestations but below INSTALL_THRESHOLD_COUNT or INSTALL_THRESHOLD_SCORE
-   *   allow   — meets both INSTALL_THRESHOLD_COUNT (>= 3) and INSTALL_THRESHOLD_SCORE (>= 300)
+   *   sandbox — has attestations but below the score or count threshold
+   *   allow   — meets both the score threshold and the count threshold
    *
-   * Usage:
+   * By default uses INSTALL_THRESHOLD_SCORE (300n) and INSTALL_THRESHOLD_COUNT (3n).
+   * Pass opts to use a stricter or more relaxed policy.
+   *
+   * Usage — default policy:
    * ```typescript
    * const info = await isnad.getTrustScore(skillHash);
    * const verdict = IsnadSDK.checkInstallPolicy(info);
    * if (verdict === 'deny') throw new Error('Skill is quarantined or unattested — refusing install');
-   * if (verdict === 'sandbox') console.warn('Skill below trust threshold — installing in sandbox');
+   * if (verdict === 'sandbox') console.warn('Skill below trust threshold — running in sandbox');
    * ```
    *
-   * Override thresholds by importing INSTALL_THRESHOLD_SCORE and INSTALL_THRESHOLD_COUNT.
+   * Usage — strict depth-aware policy (high-security environments):
+   * ```typescript
+   * import { INSTALL_THRESHOLD_WEIGHTED_SCORE } from '@nullius/isnad';
+   * const verdict = IsnadSDK.checkInstallPolicy(info, {
+   *   scoreThreshold: INSTALL_THRESHOLD_WEIGHTED_SCORE, // 1200n
+   * });
+   * ```
+   *
+   * The trustScore from getTrustScore() is already depth-weighted by the contract
+   * (root attestors at depth=0 contribute quality × 4, depth-1 contributes quality × 3, etc.).
+   * INSTALL_THRESHOLD_WEIGHTED_SCORE (1200n) is calibrated against this system, representing
+   * three root attestors each giving quality=100 — the gold-standard bar.
    */
-  static checkInstallPolicy(info: SkillTrustInfo): InstallVerdict {
+  static checkInstallPolicy(
+    info: SkillTrustInfo,
+    opts?: InstallPolicyOptions,
+  ): InstallVerdict {
     if (info.isQuarantined || info.attestationCount === 0n) return "deny";
-    if (
-      info.attestationCount >= INSTALL_THRESHOLD_COUNT &&
-      info.trustScore >= INSTALL_THRESHOLD_SCORE
-    ) {
+    const scoreThreshold = opts?.scoreThreshold ?? INSTALL_THRESHOLD_SCORE;
+    const countThreshold = opts?.countThreshold ?? INSTALL_THRESHOLD_COUNT;
+    if (info.attestationCount >= countThreshold && info.trustScore >= scoreThreshold) {
       return "allow";
     }
     return "sandbox";

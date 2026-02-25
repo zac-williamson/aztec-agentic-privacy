@@ -7,10 +7,40 @@ import type { Fr } from "@aztec/aztec.js/fields";
  * Derived from community Q1 discussion (builds post, 2026-02-23):
  * "allow if count >= 3 and score >= 300, sandbox if count = 1-2, deny if count = 0"
  *
+ * This threshold is applied against the depth-weighted trust score returned by the contract.
+ * A single root attestor (depth=0, weight=4) giving quality=75 satisfies this threshold alone
+ * (75 × 4 = 300). Use INSTALL_THRESHOLD_WEIGHTED_SCORE for a stricter depth-aware policy.
+ *
  * Agents may override this to set stricter or looser policies based on their risk tolerance.
  * For high-risk environments (financial tools, system access), consider doubling both thresholds.
  */
 export const INSTALL_THRESHOLD_SCORE = 300n;
+
+/**
+ * Stricter depth-aware trust score threshold for high-security skill installations.
+ *
+ * Calibrated against the Isnad chain's depth weighting system (depth=0: ×4, depth=1: ×3,
+ * depth=2: ×2, depth=3+: ×1). Equals 3 × 100 × 4 = 1200, representing the gold standard:
+ * three root attestors (depth=0) each giving maximum quality.
+ *
+ * With this threshold, to reach "allow" a skill needs one of:
+ *   - 3 root attestors (depth=0) at quality≥100   (3 × 100 × 4 = 1200)
+ *   - 4 depth-1 attestors at quality≥100           (4 × 100 × 3 = 1200)
+ *   - 6 depth-2 attestors at quality≥100           (6 × 100 × 2 = 1200)
+ *   - 12 depth-3+ attestors at quality≥100         (12 × 100 × 1 = 1200)
+ *   - Any weighted combination summing to ≥1200
+ *
+ * The INSTALL_THRESHOLD_COUNT (3 auditors) still applies independently, ensuring
+ * even root-heavy scores reflect multiple independent reviewers.
+ *
+ * Use this with checkInstallPolicy() by passing it in the options:
+ * ```typescript
+ * const verdict = IsnadSDK.checkInstallPolicy(info, {
+ *   scoreThreshold: INSTALL_THRESHOLD_WEIGHTED_SCORE,
+ * });
+ * ```
+ */
+export const INSTALL_THRESHOLD_WEIGHTED_SCORE = 1200n;
 
 /**
  * Minimum number of independent auditors before an agent should auto-allow a skill install.
@@ -22,6 +52,35 @@ export const INSTALL_THRESHOLD_SCORE = 300n;
  * Three independent auditors is the minimum for meaningful convergence; ten is the ESTABLISHED bar.
  */
 export const INSTALL_THRESHOLD_COUNT = 3n;
+
+/**
+ * Options for overriding the default install policy thresholds in checkInstallPolicy().
+ *
+ * Both fields are optional — omitting them uses the default constants.
+ *
+ * Common usage patterns:
+ *   Default policy (community baseline):
+ *     IsnadSDK.checkInstallPolicy(info)
+ *
+ *   Strict depth-aware policy (high-security environments):
+ *     IsnadSDK.checkInstallPolicy(info, { scoreThreshold: INSTALL_THRESHOLD_WEIGHTED_SCORE })
+ *
+ *   Relaxed policy (exploratory or low-risk skills):
+ *     IsnadSDK.checkInstallPolicy(info, { scoreThreshold: 100n, countThreshold: 1n })
+ */
+export interface InstallPolicyOptions {
+  /**
+   * Minimum cumulative depth-weighted trust score required for "allow".
+   * Defaults to INSTALL_THRESHOLD_SCORE (300n).
+   * Use INSTALL_THRESHOLD_WEIGHTED_SCORE (1200n) for stricter depth-aware enforcement.
+   */
+  scoreThreshold?: bigint;
+  /**
+   * Minimum number of unique attestors required for "allow".
+   * Defaults to INSTALL_THRESHOLD_COUNT (3n).
+   */
+  countThreshold?: bigint;
+}
 
 /**
  * The install policy verdict returned by IsnadSDK.checkInstallPolicy().
