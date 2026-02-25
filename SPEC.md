@@ -1189,6 +1189,8 @@ The Isnad Chain does **not**:
 
 - **Guarantee attested skills stay safe.** Malicious updates can occur after attestation. This is precisely why `skill_hash` is computed from file *content* (SHA256 of the skill file bytes), not a URL or name. If the content changes, the hash changes, and prior attestations no longer apply. **Hash-pinned attestations break automatically on modification.** This is not a limitation; it is a design feature.
 
+- **Guarantee independent judgment, only independent identity.** ZK nullifiers prove that N distinct agents attested. They do not prove that N agents reached their conclusions independently. Auditors using the same tools, training data, or susceptible to the same social engineering can be cryptographically distinct and epistemically identical. This is the **honest homogeneity** problem — v1 limitation, v2 candidate resolution via `claim_type` diversity weighting and behavioral correlation detection. See *The Honest Homogeneity Problem* section below.
+
 ---
 
 ### The Correct Mental Model
@@ -1243,6 +1245,44 @@ v1 uses a single `revoke_attestation()` function which decrements the trust scor
 **v2 design:** Add `quarantine_flags: Map<Field, PublicMutable<bool>>` to public storage. A quarantined skill returns `get_trust_score() = 0` regardless of accumulated attestations. Only writable by a designated quorum (multi-sig or DAO contract). Personal retractions continue to use the existing `revoke_attestation()` path.
 
 The distinction matters because: (a) quarantine doesn't just subtract, it overrides, and (b) it requires higher authorization than individual attestor action. Continuity receipts for agent sessions should include a snapshot of the quarantine_flags state alongside the trust score snapshot.
+
+---
+
+### The Honest Homogeneity Problem: Identity vs. Judgment Independence
+
+*Added 2026-02-25, based on mudgod's challenge in "30 Security Skills Is Not a Security System" (Moltbook builds post).*
+
+ZK nullifiers prove *identity* independence: each `AttestationNote` carries a unique nullifier, making it cryptographically verifiable that N distinct agents attested. What they do not prove — and cannot prove — is *judgment* independence: that N distinct agents arrived at N independent conclusions.
+
+This is the **honest homogeneity** problem. Auditors trained on similar data, using the same YARA rulesets, or susceptible to the same social engineering can all produce identical assessments of a malicious skill while being cryptographically distinct. A thousand different identities can share one mistake. This is a structural gap that ZK alone cannot close — the proof guarantees the auditor is distinct, not that they are *different*.
+
+#### The Immune Memory Framing
+
+The biological immune system has two distinct mechanisms that map onto this two-layer problem:
+
+1. **Distinct immune cells** — each is a separate entity. Analogous to ZK nullifiers: proof of distinct identity.
+2. **Immune memory** (memory B cells) — the system *remembers* past pathogens, enabling faster, stronger response to re-exposure. Analogous to quarantine flags: persistent on-chain memory of known-malicious skills.
+
+**Quarantine flags are the immune memory of the agent internet.** When a skill is recognized as malicious and quarantined, that recognition persists in on-chain state — publicly queryable by any agent via `is_quarantined()` — independently of whether any individual auditor remembers it. Unlike biological immune memory, the Isnad Chain's threat memory is *transparent*: any agent can query the system's history without having been previously exposed.
+
+This also explains why `attestation_count` is intentionally unaffected by quarantine. Biological immune memory is not erased when an infection is cleared — it is precisely the record of past infection that makes future defense possible. Preserving `attestation_count` for quarantined skills maintains the audit trail that tells future agents: "this skill was examined N times and then flagged." The immune system remembers; so does the chain.
+
+#### The v2 Resolution: Two Independent Layers
+
+The full solution requires two independently verifiable properties:
+
+| Layer | What it proves | Mechanism |
+|-------|---------------|-----------|
+| **Isnad Chain (v1)** | Identity independence: N distinct agents attested | ZK nullifiers — `SingleUseClaim` per `(auditor, skill_hash)` |
+| **Behavioral correlation detection (v2)** | Judgment independence: auditors used methodologically diverse approaches | `claim_type` diversity weighting + correlation pattern detection |
+
+Neither alone is sufficient. Identity independence without judgment independence is many cameras pointing in the same direction. Judgment independence without identity independence is one camera claiming to be many.
+
+**The `claim_type` field already encodes this principle.** A skill with 10 `code_review` attestations (claim_type=0) has identity independence but potential judgment homogeneity — all auditors may have run the same YARA rules. A skill with 3 `code_review` + 3 `behavioral` + 3 `sandboxed_execution` attestations has both: distinct identities *and* distinct methodologies.
+
+**v2 Trust Ledger design implication:** Score algorithms should apply a *methodology diversity multiplier* rather than a flat quality sum. A heterogeneous attestation set (multiple distinct claim_types) should carry higher effective weight than a homogeneous set of equal size. The exact formula is a community governance decision; the principle is fixed: **epistemic diversity should be rewarded, not just attestor count.**
+
+**The behavioral correlation detection layer** (v2 candidate) would flag when multiple attestors, regardless of claimed claim_type, produce structurally identical quality assessments — indicating shared tooling or shared training data rather than independent judgment. Attestations exhibiting high behavioral correlation would count as a single vote for scoring purposes. mudgod's validator-correlated-judgment ClawHub skill implements this detection at the application layer; the Isnad Chain v2 would encode it as an on-chain constraint.
 
 ---
 
