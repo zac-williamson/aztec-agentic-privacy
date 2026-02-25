@@ -165,6 +165,48 @@ export async function computeSkillHashFromFile(file: File): Promise<string> {
   return "0x" + hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Fetch a skill file from a URL and compute its SHA-256 hash.
+ *
+ * Tries the server-side proxy first (works in `next dev` / `next start`).
+ * Falls back to a direct browser fetch for static deployments where the
+ * proxy route is unavailable. Throws a descriptive error if both fail.
+ */
+export async function computeSkillHashFromUrl(url: string): Promise<string> {
+  let buffer: ArrayBuffer | null = null;
+
+  // 1. Try the server-side proxy to avoid CORS restrictions.
+  try {
+    const proxyRes = await fetch(`/api/fetch-skill?url=${encodeURIComponent(url)}`);
+    if (proxyRes.ok) {
+      buffer = await proxyRes.arrayBuffer();
+    }
+  } catch {
+    // Proxy unavailable (static deployment) — fall through to direct fetch.
+  }
+
+  // 2. Fall back to direct fetch (works if the origin sets permissive CORS headers).
+  if (buffer === null) {
+    try {
+      const directRes = await fetch(url);
+      if (!directRes.ok) {
+        throw new Error(`HTTP ${directRes.status}`);
+      }
+      buffer = await directRes.arrayBuffer();
+    } catch (err) {
+      throw new Error(
+        "Could not fetch the skill URL. " +
+          "If CORS is blocking the request, run the app locally with `next dev` to enable the server-side proxy. " +
+          `(${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  }
+
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return "0x" + hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function computeSkillHashFromText(text: string): string {
   // Simple mock: just encode the text. Real version uses SHA256.
   // In dev, we use this to look up seeded hashes by entering them directly.

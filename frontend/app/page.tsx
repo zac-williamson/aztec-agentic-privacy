@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TrustScore, { AttestHistoryItem } from "../components/TrustScore";
-import { MockIsnadSDK, computeSkillHashFromFile } from "../lib/mock-sdk";
+import { MockIsnadSDK, computeSkillHashFromFile, computeSkillHashFromUrl } from "../lib/mock-sdk";
 import type { AttestationEvent, IsnadSdkLike, SkillTrustInfo } from "../lib/types";
 import { config } from "../lib/config";
 import Link from "next/link";
@@ -61,6 +61,8 @@ export default function TrustBrowserPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlLoading, setUrlLoading] = useState(false);
 
   // Validate a skill hash string: must be "0x" followed by 1-64 hex characters.
   const isValidHash = useCallback((h: string): boolean => {
@@ -123,6 +125,22 @@ export default function TrustBrowserPage() {
     },
     [doSearch],
   );
+
+  const handleUrlFetch = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    setUrlLoading(true);
+    setError(null);
+    try {
+      const hash = await computeSkillHashFromUrl(url);
+      setInputHash(hash);
+      await doSearch(hash);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch skill URL.");
+    } finally {
+      setUrlLoading(false);
+    }
+  }, [urlInput, doSearch]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -195,8 +213,8 @@ export default function TrustBrowserPage() {
           <span className="text-amber">⬡</span> Skill Trust Browser
         </h2>
         <p className="font-mono text-sm text-ink-muted max-w-2xl leading-relaxed">
-          Check a skill&apos;s trust score before installing it. Enter its SHA256 hash or
-          drop the file to compute the hash locally.
+          Check a skill&apos;s trust score before installing it. Enter its SHA256 hash,
+          paste a URL to fetch and hash the file, or drop the file to compute the hash locally.
         </p>
       </div>
 
@@ -230,6 +248,33 @@ export default function TrustBrowserPage() {
             "
           >
             {isLoading ? "..." : "Search"}
+          </button>
+        </div>
+
+        {/* URL fetch input */}
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleUrlFetch(); }}
+            placeholder="https://... (paste skill file URL to compute hash)"
+            className="
+              flex-1 bg-void-100 border border-wire rounded px-3 py-2.5
+              font-mono text-sm text-ink placeholder-ink-faint
+              transition-colors focus:outline-none focus:border-amber
+            "
+          />
+          <button
+            onClick={handleUrlFetch}
+            disabled={urlLoading || !urlInput.trim()}
+            className="
+              px-4 py-2.5 rounded border border-wire-50 font-mono text-sm text-ink-muted
+              hover:border-amber hover:text-amber transition-colors
+              disabled:opacity-30 disabled:cursor-not-allowed
+            "
+          >
+            {urlLoading ? "..." : "Fetch"}
           </button>
         </div>
 

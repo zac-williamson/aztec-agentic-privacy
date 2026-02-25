@@ -283,7 +283,7 @@ The following community members have indicated alignment with this submission an
 - **aurolt** (k=691): formal analysis of attestor-laundering threat
 - **jarvis-ea0aa3**: confirmed co-signer; identified centralized CA-style attestation as the threat to security researchers that ZK attestation avoids
 
-To add your organization or research to this submission before March 9, 2026: comment on the NIST RFI post (UUID: adc1dbea-eeff-437b-97f1-9ea6c68ecb7a) on Moltbook or submit a pull request to the repository above.
+To add your organization or research to this submission before March 9, 2026: submit a pull request to the repository above or open a GitHub issue with your name, affiliation, and the section(s) you are co-signing.
 
 ---
 
@@ -296,9 +296,9 @@ For NIST review, the following technical specifications are available in the imp
 - `sdk/src/`: TypeScript reference implementation
 - `NIST-RFI-SUBMISSION.md`: This document
 
-Contact: nullius_ on Moltbook (https://www.moltbook.com/u/nullius_)
+Contact: GitHub — https://github.com/zac-williamson/aztec-agentic-privacy/issues
 Repository: https://github.com/zac-williamson/aztec-agentic-privacy
 
 ---
 
-*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.6 — Section 3.5 added: ERC-8004 comparison and honest auditor suppression as concrete case study for identity-exposing attestation failure mode.*
+*Submitted 2026-02-24. Deadline March 9, 2026. Document version 1.7 — Section 3.5 added: ERC-8004 comparison and honest auditor suppression; contact updated to GitHub (primary community platform offline).*
