@@ -46,17 +46,15 @@ import { AztecAddress, Fr } from '@aztec/aztec.js';
 // Connect to a deployed IsnadRegistry contract
 const sdk = await IsnadSDK.connect(wallet, myAddress, contractAddress);
 
-// Check a skill's trust score before installing it
+// Check a skill's trust score and apply the default install policy
 const skillFileContent = await fs.readFile('./suspicious-skill.md');
 const skillHash = await IsnadSDK.computeSkillHash(new Uint8Array(skillFileContent));
 const trust = await sdk.getTrustScore(skillHash);
 
-console.log(`Trust score: ${trust.trustScore} from ${trust.attestationCount} auditors`);
-// Trust score: 847 from 9 auditors
-
-if (trust.attestationCount === 0n) {
-  console.warn('This skill has never been audited. Install with caution.');
-}
+const verdict = IsnadSDK.checkInstallPolicy(trust);
+if (verdict === 'deny')    throw new Error('Skill is quarantined or unattested — refusing install');
+if (verdict === 'sandbox') console.warn('Skill below trust threshold — installing in sandbox');
+// verdict === 'allow': meets INSTALL_THRESHOLD_COUNT (3) and INSTALL_THRESHOLD_SCORE (300)
 ```
 
 ---
@@ -92,6 +90,44 @@ console.log(hash.toString());  // '0x1a2b3c...'
 
 ---
 
+### `IsnadSDK.checkInstallPolicy(info)` (static)
+
+Apply the default install policy to a `SkillTrustInfo` result. Returns an `InstallVerdict`:
+
+| Verdict    | Condition |
+|------------|-----------|
+| `"deny"`    | Skill is quarantined (KNOWN MALICIOUS) **or** has zero attestations |
+| `"sandbox"` | Has attestations but below `INSTALL_THRESHOLD_COUNT` (3) or `INSTALL_THRESHOLD_SCORE` (300) |
+| `"allow"`   | Meets both `INSTALL_THRESHOLD_COUNT` and `INSTALL_THRESHOLD_SCORE` |
+
+```typescript
+import { IsnadSDK, INSTALL_THRESHOLD_COUNT, INSTALL_THRESHOLD_SCORE } from '@nullius/isnad';
+
+const trust = await sdk.getTrustScore(skillHash);
+const verdict = IsnadSDK.checkInstallPolicy(trust);
+
+switch (verdict) {
+  case 'deny':
+    throw new Error('Refusing install: skill is quarantined or unattested');
+  case 'sandbox':
+    console.warn(`Install with caution: only ${trust.attestationCount} auditors, score ${trust.trustScore}`);
+    break;
+  case 'allow':
+    console.log(`Installing: ${trust.attestationCount} auditors, score ${trust.trustScore}`);
+    break;
+}
+
+// Override thresholds for high-security environments:
+// (INSTALL_THRESHOLD_COUNT and INSTALL_THRESHOLD_SCORE are exported constants)
+const isHighTrust = trust.attestationCount >= INSTALL_THRESHOLD_COUNT * 2n
+                 && trust.trustScore >= INSTALL_THRESHOLD_SCORE * 2n;
+```
+
+Threshold values were set based on community feedback (Q1 discussion, builds post 2026-02-23):
+`allow if count >= 3 and score >= 300, sandbox if count = 1-2, deny if count = 0`
+
+---
+
 ### `sdk.getTrustScore(skillHash)`
 
 Read the public trust score for a skill. **No wallet required.** Anyone can call this.
@@ -107,11 +143,13 @@ const trust = await sdk.getTrustScore('0x1a2b3c...');
 
 A trust score of `0` means the skill has never been attested. It is **unscored**, not certified safe.
 
-Trust levels (suggested thresholds):
-- `UNSCORED`: 0 attestors
-- `EMERGING`: 1-2 attestors, score < 150
-- `TRUSTED`: 3-9 attestors, score 150-499
-- `ESTABLISHED`: 10+ attestors, score 500+
+Trust levels:
+- `UNSCORED`: 0 attestors — deny install
+- `EMERGING`: 1-2 attestors or score < 300 — sandbox install
+- `TRUSTED`: ≥3 attestors and score ≥300 — auto-allow (meets default thresholds)
+- `ESTABLISHED`: 10+ attestors and score ≥500 — high confidence
+
+Use `IsnadSDK.checkInstallPolicy(trust)` to apply the default policy automatically (see below).
 
 ---
 

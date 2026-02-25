@@ -8,11 +8,12 @@ import type {
   CredentialResult,
   DelegatedCredentialOptions,
   GrantAccessOptions,
+  InstallVerdict,
   RotateCredentialOptions,
   SkillTrustInfo,
   StoreCredentialOptions,
 } from "./types.js";
-import { ClaimType } from "./types.js";
+import { ClaimType, INSTALL_THRESHOLD_COUNT, INSTALL_THRESHOLD_SCORE } from "./types.js";
 import { IsnadRegistryContract } from "./artifacts/IsnadRegistry.js";
 
 /**
@@ -410,6 +411,35 @@ export class IsnadSDK {
     // Roughly 1/4 of hashes exceed the field modulus and need reduction; bias is negligible.
     const BN254_P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
     return new Fr(value % BN254_P);
+  }
+
+  /**
+   * Apply the default install policy to a SkillTrustInfo result.
+   *
+   * Policy (from Q1 community discussion):
+   *   deny    — skill is quarantined (KNOWN MALICIOUS) or has zero attestations
+   *   sandbox — has attestations but below INSTALL_THRESHOLD_COUNT or INSTALL_THRESHOLD_SCORE
+   *   allow   — meets both INSTALL_THRESHOLD_COUNT (>= 3) and INSTALL_THRESHOLD_SCORE (>= 300)
+   *
+   * Usage:
+   * ```typescript
+   * const info = await isnad.getTrustScore(skillHash);
+   * const verdict = IsnadSDK.checkInstallPolicy(info);
+   * if (verdict === 'deny') throw new Error('Skill is quarantined or unattested — refusing install');
+   * if (verdict === 'sandbox') console.warn('Skill below trust threshold — installing in sandbox');
+   * ```
+   *
+   * Override thresholds by importing INSTALL_THRESHOLD_SCORE and INSTALL_THRESHOLD_COUNT.
+   */
+  static checkInstallPolicy(info: SkillTrustInfo): InstallVerdict {
+    if (info.isQuarantined || info.attestationCount === 0n) return "deny";
+    if (
+      info.attestationCount >= INSTALL_THRESHOLD_COUNT &&
+      info.trustScore >= INSTALL_THRESHOLD_SCORE
+    ) {
+      return "allow";
+    }
+    return "sandbox";
   }
 
   private _hashKeyId(keyId: string): Fr {

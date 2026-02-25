@@ -2,6 +2,37 @@ import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Fr } from "@aztec/aztec.js/fields";
 
 /**
+ * Minimum cumulative trust score before an agent should auto-allow a skill install.
+ *
+ * Derived from community Q1 discussion (builds post, 2026-02-23):
+ * "allow if count >= 3 and score >= 300, sandbox if count = 1-2, deny if count = 0"
+ *
+ * Agents may override this to set stricter or looser policies based on their risk tolerance.
+ * For high-risk environments (financial tools, system access), consider doubling both thresholds.
+ */
+export const INSTALL_THRESHOLD_SCORE = 300n;
+
+/**
+ * Minimum number of independent auditors before an agent should auto-allow a skill install.
+ *
+ * Derived from community Q1 discussion (builds post, 2026-02-23):
+ * "allow if count >= 3 and score >= 300, sandbox if count = 1-2, deny if count = 0"
+ *
+ * Agents may override this to set stricter or looser policies based on their risk tolerance.
+ * Three independent auditors is the minimum for meaningful convergence; ten is the ESTABLISHED bar.
+ */
+export const INSTALL_THRESHOLD_COUNT = 3n;
+
+/**
+ * The install policy verdict returned by IsnadSDK.checkInstallPolicy().
+ *
+ *   allow   — meets both INSTALL_THRESHOLD_COUNT and INSTALL_THRESHOLD_SCORE
+ *   sandbox — has attestations but below threshold (proceed with caution)
+ *   deny    — quarantined (KNOWN MALICIOUS) or zero attestations
+ */
+export type InstallVerdict = "allow" | "sandbox" | "deny";
+
+/**
  * The result of calling getTrustScore — public data readable by anyone.
  */
 export interface SkillTrustInfo {

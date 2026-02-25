@@ -20,13 +20,15 @@
  */
 
 export { IsnadSDK } from "./isnad.js";
-export { ClaimType } from "./types.js";
+export { ClaimType, INSTALL_THRESHOLD_COUNT, INSTALL_THRESHOLD_SCORE } from "./types.js";
 export type {
   AttestOptions,
+  AttestorInfo,
   ClaimType as ClaimTypeValue,
   CredentialResult,
   DelegatedCredentialOptions,
   GrantAccessOptions,
+  InstallVerdict,
   RotateCredentialOptions,
   SkillTrustInfo,
   StoreCredentialOptions,
