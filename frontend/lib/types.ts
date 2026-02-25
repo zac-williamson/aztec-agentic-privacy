@@ -20,6 +20,8 @@ export interface AttestationEvent {
 export interface AttestOptions {
   skillHash: string;
   quality: number;
+  /** 0=code_review, 1=behavioral, 2=sandboxed_execution. Stored privately; never revealed on-chain. */
+  claimType?: number;
 }
 
 export interface StoreCredentialOptions {
@@ -95,6 +97,8 @@ export interface IsnadSdkLike {
 export interface LocalAttestation {
   skillHash: string;
   quality: number;
+  /** 0=code_review, 1=behavioral, 2=sandboxed_execution */
+  claimType?: number;
   timestamp: Date;
   txHash: string;
   revoked: boolean;

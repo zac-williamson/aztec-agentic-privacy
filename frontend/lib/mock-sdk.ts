@@ -232,6 +232,7 @@ export class MockIsnadSDK {
     this.state.myAttestations.unshift({
       skillHash: opts.skillHash,
       quality: opts.quality,
+      claimType: opts.claimType,
       timestamp: now,
       txHash,
       revoked: false,

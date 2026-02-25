@@ -26,6 +26,7 @@ function AttestForm() {
   const [skillHash, setSkillHash] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [quality, setQuality] = useState(80);
+  const [claimType, setClaimType] = useState(0); // 0=code_review, 1=behavioral, 2=sandboxed_execution
   const [phase, setPhase] = useState<"idle" | "proving" | "submitting" | "done" | "error">("idle");
   const [txHash, setTxHash] = useState<string | undefined>();
   const [errorMsg, setErrorMsg] = useState<string | undefined>();
@@ -53,7 +54,7 @@ function AttestForm() {
 
     try {
       const result = await sdk.attest(
-        { skillHash: skillHash.trim(), quality },
+        { skillHash: skillHash.trim(), quality, claimType },
         (p) => setPhase(p),
       );
       setPhase("done");
@@ -70,6 +71,7 @@ function AttestForm() {
     setSkillHash("");
     setFileName(null);
     setQuality(80);
+    setClaimType(0);
     setTxHash(undefined);
     setErrorMsg(undefined);
   }, []);
@@ -165,6 +167,44 @@ function AttestForm() {
             <span>50 — use with caution</span>
             <span>100 — fully trusted</span>
           </div>
+        </div>
+
+        {/* Audit methodology */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="font-mono text-xs text-ink-muted">Audit methodology</label>
+            <span className="font-mono text-xs text-ink-faint">stored privately</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { value: 0, icon: "📄", label: "static", title: "Code Review", desc: "YARA rules, linting, dependency scan" },
+              { value: 1, icon: "🔬", label: "behavioral", title: "Behavioral", desc: "Runtime monitoring, syscall tracing" },
+              { value: 2, icon: "🔒", label: "sandboxed", title: "Sandboxed", desc: "Isolated execution, output verification" },
+            ].map(({ value, icon, label, title, desc }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setClaimType(value)}
+                disabled={isSubmitting}
+                className={`
+                  flex flex-col items-center gap-1 px-2 py-3 rounded border text-center transition-colors
+                  ${claimType === value
+                    ? "border-amber bg-amber/5 text-ink"
+                    : "border-wire text-ink-muted hover:border-ink-muted hover:text-ink"
+                  }
+                  disabled:opacity-30 disabled:cursor-not-allowed
+                `}
+                title={desc}
+              >
+                <span className="text-base">{icon}</span>
+                <span className="font-mono text-xs font-medium">{title}</span>
+                <span className="font-mono text-xs text-ink-faint">{label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="font-mono text-xs text-ink-faint leading-relaxed">
+            Your audit method is stored only in your private attestation note — never visible on-chain.
+          </p>
         </div>
 
         {/* Proof progress */}
@@ -267,6 +307,11 @@ function AttestationHistory() {
           const isRevokingThis = revokingHash === att.skillHash && revokePhase !== "idle";
           const daysAgo = Math.floor((Date.now() - att.timestamp.getTime()) / (1000 * 60 * 60 * 24));
           const timeLabel = daysAgo === 0 ? "just now" : daysAgo === 1 ? "1 day ago" : `${daysAgo} days ago`;
+          const claimTypeLabel = att.claimType === 1
+            ? "🔬 behavioral"
+            : att.claimType === 2
+            ? "🔒 sandboxed"
+            : "📄 static";
 
           return (
             <div key={att.txHash} className="p-4 space-y-3">
@@ -279,6 +324,7 @@ function AttestationHistory() {
                     <span className="font-mono text-xs text-ink-muted">
                       quality: <span className="text-signal-trusted">{att.quality}</span>
                     </span>
+                    <span className="font-mono text-xs text-ink-faint">{claimTypeLabel}</span>
                     <span className="font-mono text-xs text-ink-faint">{timeLabel}</span>
                   </div>
                 </div>
